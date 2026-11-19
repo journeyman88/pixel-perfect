@@ -22,7 +22,10 @@
 # - `seekFlipbook` to restart the walk cycle on the turn;
 # - `setVisible` to show a speech bubble for a moment;
 # - sprite inheritance with `overrideLines` for the leg poses, and a `scale`
-#   transform that stretches a 1x2 sprite into the whole backdrop.
+#   transform that stretches a 1x2 sprite into the whole backdrop;
+# - a `tile` transform that repeats a 5x2 cobblestone tile into the 48x2
+#   path the critter walks on (48 is not a multiple of 5: the last tile is
+#   cut at the right edge).
 $schema: ../schema/worksheet.schema.json
 
 palettes:
@@ -38,11 +41,17 @@ palettes:
       - { char: F, rgba: [255, 240, 160] }   # flame core
       - { char: h, rgba: [250, 150, 40, 0.4] } # flame glow
       - { char: t, rgba: [90, 60, 40] }      # post
+      - { char: s, rgba: [140, 130, 120] }   # cobblestone
+      - { char: d, rgba: [95, 85, 80] }      # cobblestone joint
 
 sprites:
   - id: backdrop
     _palette: evening
     lines: ["a", "g"]
+
+  - id: cobble
+    _palette: evening
+    lines: ["ssssd", "sdsss"]
 
   - id: critter
     _palette: evening
@@ -118,6 +127,10 @@ panels:
         coordinates: [0, 0]
         zIndex: -1
         transforms: [{ kind: scale, width: 48, height: 16 }]
+      - _sprite: cobble
+        coordinates: [0, 14]
+        zIndex: -1
+        transforms: [{ kind: tile, width: 48, height: 2 }]
       - { id: critter, _flipbook: walk, coordinates: [2, 7] }
       - { id: bubble, _sprite: bubble, coordinates: [39, 0], visible: false }
 

@@ -39,7 +39,7 @@
       "elements": [
         { "id": "hero", "_sprite": "block", "coordinates": [0, 0], "zIndex": 2, "description": "The hero." },
         { "id": "spinner", "_flipbook": "spin", "coordinates": [40, -4], "visible": false, "transforms": [{ "kind": "crop", "area": [1, 1, 6, 6] }] },
-        { "_sprite": "block-night", "coordinates": [10, 2] }
+        { "_sprite": "block-night", "coordinates": [10, 2], "transforms": [{ "kind": "tile", "width": 6, "height": 10 }] }
       ]
     }
   ],

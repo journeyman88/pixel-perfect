@@ -163,8 +163,8 @@
             "type": "object",
             "properties": {
                 "kind": {
-                    "description": "flip: mirror on an axis; rotate: clockwise rotation; scale: resize with nearest-neighbor; crop: keep a rectangular area.",
-                    "enum": ["flip", "rotate", "scale", "crop"]
+                    "description": "flip: mirror on an axis; rotate: clockwise rotation; scale: resize with nearest-neighbor; crop: keep a rectangular area; tile: repeat the image to a given size.",
+                    "enum": ["flip", "rotate", "scale", "crop", "tile"]
                 }
             },
             "required": ["kind"],
@@ -200,6 +200,17 @@
                     "if": { "properties": { "kind": { "const": "scale" } }, "required": ["kind"] },
                     "then": {
                         "description": "Resize the image to exactly `width` x `height` pixels using nearest-neighbor resampling.",
+                        "properties": {
+                            "width": { "$ref": "#/$defs/size", "description": "Target width in pixels." },
+                            "height": { "$ref": "#/$defs/size", "description": "Target height in pixels." }
+                        },
+                        "required": ["width", "height"]
+                    }
+                },
+                {
+                    "if": { "properties": { "kind": { "const": "tile" } }, "required": ["kind"] },
+                    "then": {
+                        "description": "Repeat the image from its top-left corner to exactly `width` x `height` pixels: pixel (x, y) is pixel (x mod w, y mod h) of the image as it is at this point of the transform chain. Tiles that do not fit are cut at the right and bottom edges; a size smaller than the image keeps its top-left area.",
                         "properties": {
                             "width": { "$ref": "#/$defs/size", "description": "Target width in pixels." },
                             "height": { "$ref": "#/$defs/size", "description": "Target height in pixels." }

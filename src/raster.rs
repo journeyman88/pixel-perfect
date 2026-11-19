@@ -129,6 +129,9 @@ pub fn apply(image: &Image, transform: &Transform) -> Image {
             );
             Image::from_fn(cw, ch, |x, y| image.get(cx + x, cy + y))
         }
+        Transform::Tile { width, height } => {
+            Image::from_fn(width, height, |x, y| image.get(x % w, y % h))
+        }
     }
 }
 
@@ -142,7 +145,7 @@ pub fn output_size(size: (u32, u32), transform: &Transform) -> (u32, u32) {
             degrees: Rotation::Deg180,
         } => size,
         Transform::Rotate { .. } => (size.1, size.0),
-        Transform::Scale { width, height } => (width, height),
+        Transform::Scale { width, height } | Transform::Tile { width, height } => (width, height),
         Transform::Crop { area: [_, _, w, h] } => (w, h),
     }
 }

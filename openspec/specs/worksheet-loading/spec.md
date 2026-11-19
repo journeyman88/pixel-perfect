@@ -169,10 +169,10 @@ sprite's palette.
 
 ### Requirement: Transforms stay within bounds
 Each `crop` area SHALL lie inside the image as it is at that point of the
-`transforms` chain, taking previous `rotate`, `scale` and `crop` steps into
-account. This SHALL hold for the chains declared on flipbook frames and panel
-elements, and for every chain an element can have during a timeline: its own
-`transforms` followed by the `transforms` of the `appendTransforms` applied
+`transforms` chain, taking previous `rotate`, `scale`, `tile` and `crop` steps
+into account. This SHALL hold for the chains declared on flipbook frames and
+panel elements, and for every chain an element can have during a timeline: its
+own `transforms` followed by the `transforms` of the `appendTransforms` applied
 since the last `resetTransforms`, in the order in which the transitions are
 applied (by `at`, ties in array order). An error in an appended `crop` SHALL
 point to the `area` inside that `appendTransforms` transition.
@@ -183,6 +183,14 @@ point to the `area` inside that `appendTransforms` transition.
 
 #### Scenario: Crop out of bounds
 - **WHEN** a 4x8 sprite is cropped with area `[2, 0, 4, 8]`
+- **THEN** validation fails pointing to that `area`
+
+#### Scenario: Crop after tile
+- **WHEN** a 4x8 sprite is tiled to 32x8 and then cropped with area `[20, 0, 12, 8]`
+- **THEN** validation succeeds
+
+#### Scenario: Crop outside the tiled area
+- **WHEN** a 4x8 sprite is tiled to 16x8 and then cropped with area `[8, 0, 12, 8]`
 - **THEN** validation fails pointing to that `area`
 
 #### Scenario: Appended crop after an appended rotation

@@ -467,7 +467,9 @@ fn walk_crops(
                 degrees: Rotation::Deg180,
             } => {}
             Transform::Rotate { .. } => (w, h) = (h, w),
-            Transform::Scale { width, height } => (w, h) = (width.into(), height.into()),
+            Transform::Scale { width, height } | Transform::Tile { width, height } => {
+                (w, h) = (width.into(), height.into())
+            }
             Transform::Crop {
                 area: [x, y, cw, ch],
             } => {

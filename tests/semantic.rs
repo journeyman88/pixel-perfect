@@ -227,6 +227,32 @@ fn appended_chain_follows_at_order_not_array_order() {
     load(doc);
 }
 
+#[test]
+fn appended_crop_after_an_appended_tile() {
+    let tile = json!({ "kind": "tile", "width": 12, "height": 8 });
+    let wide_crop = json!({ "kind": "crop", "area": [6, 0, 6, 8] });
+    let mut doc = full();
+    set(
+        &mut doc,
+        "/timelines/0/transitions/3",
+        append(tile.clone(), 2),
+    );
+    set(
+        &mut doc,
+        "/timelines/0/transitions/2",
+        append(wide_crop.clone(), 4),
+    );
+    load(doc);
+
+    // Without the tile, the same crop does not fit the 4x8 sprite.
+    let e = invalid_with(&[("/timelines/0/transitions/2", append(wide_crop, 4))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/2/transforms/0/area",
+        "does not fit in the 4x8 image",
+    );
+}
+
 // Inheritance cycles
 
 #[test]
@@ -393,6 +419,37 @@ fn crop_follows_scale_and_previous_crop() {
         &e,
         "/flipbooks/0/frames/3/transforms/2/area",
         "does not fit in the 8x8 image",
+    );
+}
+
+#[test]
+fn crop_after_tile() {
+    // `hero` is the 4x8 `block`.
+    let mut doc = full();
+    set(
+        &mut doc,
+        "/panels/0/elements/0/transforms",
+        json!([
+            { "kind": "tile", "width": 32, "height": 8 },
+            { "kind": "crop", "area": [20, 0, 12, 8] }
+        ]),
+    );
+    load(doc);
+}
+
+#[test]
+fn crop_outside_the_tiled_area() {
+    let e = invalid_with(&[(
+        "/panels/0/elements/0/transforms",
+        json!([
+            { "kind": "tile", "width": 16, "height": 8 },
+            { "kind": "crop", "area": [8, 0, 12, 8] }
+        ]),
+    )]);
+    assert_error(
+        &e,
+        "/panels/0/elements/0/transforms/1/area",
+        "does not fit in the 16x8 image",
     );
 }
 

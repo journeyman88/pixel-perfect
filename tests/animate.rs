@@ -377,6 +377,17 @@ fn element_transforms_apply_to_the_canvas() {
     assert_eq!(show(&anim(&ws, "panels", "x").render_at(0)), ["AB"]);
 }
 
+#[test]
+fn tiled_flipbook_element() {
+    let ws = sheet(json!({
+        "flipbooks": [flipbook("fb", 1, &[("a", 1), ("b", 1)])],
+        "panels": [{ "id": "x", "width": 3, "height": 1, "elements": [
+            { "_flipbook": "fb", "coordinates": [0, 0], "transforms": [{ "kind": "tile", "width": 3, "height": 1 }] }
+        ] }]
+    }));
+    assert_eq!(frames(&ws, "panels", "x"), vec![f("AAA", 1), f("BBB", 1)]);
+}
+
 // Timeline evaluation
 
 #[test]

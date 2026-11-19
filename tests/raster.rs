@@ -107,6 +107,45 @@ fn crop_inner_area() {
     assert_eq!(rows(&c), ["EF", "HI"]);
 }
 
+fn tile(width: u32, height: u32) -> Transform {
+    Transform::Tile { width, height }
+}
+
+#[test]
+fn tile_repeats_horizontally() {
+    assert_eq!(rows(&apply(&img(&["AB"]), &tile(5, 1))), ["ABABA"]);
+}
+
+#[test]
+fn tile_repeats_in_both_directions() {
+    assert_eq!(
+        rows(&apply(&img(&["AB", "CD"]), &tile(3, 3))),
+        ["ABA", "CDC", "ABA"]
+    );
+}
+
+#[test]
+fn tile_smaller_than_the_image() {
+    assert_eq!(rows(&apply(&img(&["ABC", "DEF"]), &tile(2, 1))), ["AB"]);
+}
+
+#[test]
+fn tile_to_the_same_size_is_identity() {
+    let original = img(&["AB.", "CDE"]);
+    assert_eq!(apply(&original, &tile(3, 2)), original);
+}
+
+#[test]
+fn tile_repeats_transparency() {
+    assert_eq!(rows(&apply(&img(&["A."]), &tile(4, 1))), ["A.A."]);
+}
+
+#[test]
+fn tile_in_a_chain() {
+    let r = apply_all(&img(&["AB"]), &[rotate(Rotation::Deg90), tile(3, 4)]);
+    assert_eq!(rows(&r), ["AAA", "BBB", "AAA", "BBB"]);
+}
+
 #[test]
 fn chain_order_matters() {
     let r = apply_all(&img(&["AB"]), &[rotate(Rotation::Deg90), flip(Axis::Y)]);

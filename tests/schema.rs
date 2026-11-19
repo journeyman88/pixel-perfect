@@ -82,6 +82,10 @@ fn invalid_transforms() {
         json!({ "kind": "scale", "width": 0, "height": 8 }),
         json!({ "kind": "crop", "area": [0, 0, 8] }),
         json!({ "kind": "crop", "area": [0, 0, 0, 1] }),
+        json!({ "kind": "tile", "width": 8 }),
+        json!({ "kind": "tile", "height": 8 }),
+        json!({ "kind": "tile", "width": 0, "height": 8 }),
+        json!({ "kind": "tile", "width": 8, "height": 8, "offset": [1, 1] }),
         json!({ "kind": "skew" }),
     ];
     for case in cases {
@@ -95,6 +99,20 @@ fn invalid_transforms() {
             "{case} was not rejected at {base}:\n{}",
             common::render(&diagnostics)
         );
+    }
+}
+
+#[test]
+fn tile_is_accepted_in_every_transform_chain() {
+    let tile = json!({ "kind": "tile", "width": 12, "height": 9 });
+    for pointer in [
+        "/flipbooks/0/frames/0/transforms",
+        "/panels/0/elements/0/transforms",
+        "/timelines/0/transitions/3/transforms",
+    ] {
+        let mut doc = full();
+        set(&mut doc, pointer, json!([tile.clone()]));
+        load(doc);
     }
 }
 

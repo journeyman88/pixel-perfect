@@ -173,7 +173,9 @@ not in the worksheet.
 | **exports** | The resources to render, as pointers like `/sprites/hero`. If omitted, everything renderable is exported. |
 
 Sprites and flipbook frames support `flip`, `rotate` (90/180/270), `scale`
-(nearest-neighbor) and `crop` transforms.
+(nearest-neighbor), `crop` and `tile` transforms. `tile` repeats the image from
+its top-left corner to an exact `width` x `height`, cutting the tiles that do
+not fit, so a floor or wall made of one small tile is a single element.
 
 ## Example
 

@@ -118,6 +118,22 @@ fn intermediate_image() {
 }
 
 #[test]
+fn intermediate_image_after_tile() {
+    let small = json!({ "id": "small", "width": 16, "height": 16, "elements": [
+        { "_sprite": "a", "coordinates": [0, 0],
+          "transforms": [{ "kind": "tile", "width": 30000, "height": 30000 }] }
+    ] });
+    let ws = sheet(json!([small]), json!(["/panels/small"]));
+    let errors = export::plan(&ws, &options(1, DEFAULT)).unwrap_err();
+    assert_error(
+        &errors,
+        "/panels/0/elements/0/transforms/0",
+        "the result of this transform is 30000x30000",
+    );
+    assert_eq!(errors.len(), 1, "the 16x16 panel itself is fine");
+}
+
+#[test]
 fn hidden_elements_are_not_checked() {
     let small = json!({ "id": "small", "width": 16, "height": 16, "elements": [
         { "_sprite": "a", "coordinates": [0, 0], "visible": false,
@@ -216,6 +232,24 @@ fn appended_transform() {
         10,
         json!([{ "kind": "appendTransforms", "_element": "hero",
         "transforms": [{ "kind": "scale", "width": 30000, "height": 30000 }], "at": 5 }]),
+    );
+    let errors = export::plan(&ws, &options(1, DEFAULT)).unwrap_err();
+    assert_error(
+        &errors,
+        "/timelines/0/transitions/0/transforms/0",
+        "the result of this transform is 30000x30000",
+    );
+}
+
+#[test]
+fn appended_tile() {
+    let ws = timeline_sheet(
+        16,
+        16,
+        10,
+        10,
+        json!([{ "kind": "appendTransforms", "_element": "hero",
+        "transforms": [{ "kind": "tile", "width": 30000, "height": 30000 }], "at": 5 }]),
     );
     let errors = export::plan(&ws, &options(1, DEFAULT)).unwrap_err();
     assert_error(

@@ -146,6 +146,11 @@ pub enum Transform {
     Crop {
         area: [u32; 4],
     },
+    /// Repeats the image from its top-left corner to `width` x `height`.
+    Tile {
+        width: u32,
+        height: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
