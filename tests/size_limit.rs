@@ -186,3 +186,108 @@ fn nothing_is_written_when_the_limit_is_exceeded() {
     assert!(export::render(&ws, &opts).is_err());
     assert!(!opts.output_path.exists());
 }
+
+// Animations
+
+/// Panel `stage` (`width` x `height`) with element `hero`, and timeline `tl`.
+fn timeline_sheet(
+    width: u32,
+    height: u32,
+    fps: u32,
+    duration: u64,
+    transitions: Value,
+) -> pixel_perfect::ResolvedWorksheet {
+    load(json!({
+        "palettes": [{ "id": "p", "colors": [{ "char": "r", "rgba": [255, 0, 0] }] }],
+        "sprites": [{ "id": "a", "_palette": "p", "lines": ["r"] }],
+        "panels": [{ "id": "stage", "width": width, "height": height,
+            "elements": [{ "id": "hero", "_sprite": "a", "coordinates": [0, 0] }] }],
+        "timelines": [{ "id": "tl", "_panel": "stage", "fps": fps, "duration": duration, "transitions": transitions }],
+        "exports": ["/timelines/tl"]
+    }))
+}
+
+#[test]
+fn appended_transform() {
+    let ws = timeline_sheet(
+        16,
+        16,
+        10,
+        10,
+        json!([{ "kind": "appendTransforms", "_element": "hero",
+        "transforms": [{ "kind": "scale", "width": 30000, "height": 30000 }], "at": 5 }]),
+    );
+    let errors = export::plan(&ws, &options(1, DEFAULT)).unwrap_err();
+    assert_error(
+        &errors,
+        "/timelines/0/transitions/0/transforms/0",
+        "the result of this transform is 30000x30000",
+    );
+}
+
+#[test]
+fn hidden_element_of_a_timeline_is_checked() {
+    // It may become visible during the timeline.
+    let ws = load(json!({
+        "palettes": [{ "id": "p", "colors": [{ "char": "r", "rgba": [255, 0, 0] }] }],
+        "sprites": [{ "id": "a", "_palette": "p", "lines": ["r"] }],
+        "panels": [{ "id": "stage", "width": 16, "height": 16, "elements": [
+            { "id": "hero", "_sprite": "a", "coordinates": [0, 0], "visible": false,
+              "transforms": [{ "kind": "scale", "width": 30000, "height": 30000 }] }
+        ] }],
+        "timelines": [{ "id": "tl", "_panel": "stage", "fps": 10, "duration": 10,
+            "transitions": [{ "kind": "setVisible", "_element": "hero", "value": true, "at": 5 }] }],
+        "exports": ["/timelines/tl"]
+    }));
+    let errors = export::plan(&ws, &options(1, DEFAULT)).unwrap_err();
+    assert_error(&errors, "/panels/0/elements/0/transforms/0", "30000x30000");
+}
+
+/// 512 x 512 (1 MiB per frame) moving every frame-unit: 2000 frames.
+fn long_animation() -> pixel_perfect::ResolvedWorksheet {
+    timeline_sheet(
+        512,
+        512,
+        100,
+        2000,
+        json!([{ "kind": "moveTo", "_element": "hero",
+        "coordinates": [511, 511], "start": 0, "duration": 1999 }]),
+    )
+}
+
+#[test]
+fn long_animation_exceeds_the_limit() {
+    let errors = export::plan(&long_animation(), &options(1, DEFAULT)).unwrap_err();
+    assert_error(&errors, "/timelines/0", "more than 1024 frames of 512x512");
+    assert_error(
+        &errors,
+        "/timelines/0",
+        "1 GiB image size limit; raise it with --max-image-size",
+    );
+}
+
+#[test]
+fn long_animation_fits_a_raised_limit() {
+    assert!(export::plan(&long_animation(), &options(1, Some(2 << 30))).is_ok());
+}
+
+#[test]
+fn no_limit_for_animations() {
+    assert!(export::plan(&long_animation(), &options(1, None)).is_ok());
+}
+
+#[test]
+fn animation_limit_applies_after_scale() {
+    // 1000 frames of 32x32 scaled by 16 (1 MiB each) exceed 512 MiB.
+    let ws = timeline_sheet(
+        32,
+        32,
+        100,
+        1000,
+        json!([{ "kind": "moveTo", "_element": "hero",
+        "coordinates": [31, 31], "start": 0, "duration": 999 }]),
+    );
+    assert!(export::plan(&ws, &options(16, Some(1 << 30))).is_ok());
+    let errors = export::plan(&ws, &options(16, Some(512 << 20))).unwrap_err();
+    assert_error(&errors, "/timelines/0", "more than 512 frames");
+}

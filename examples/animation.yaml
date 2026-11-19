@@ -1,0 +1,156 @@
+# An evening stroll: flipbooks, a timeline and an animated scene.
+#
+#   pixel-perfect render examples/animation.yaml -o out --scale 8
+#
+# Writes four APNG files (all loop forever):
+#
+# - flipbooks/walk.png: the 4-frame walk cycle at 8 fps (0.5 s);
+# - panels/torch-post.png: a torch whose flame flickers at 10 fps (0.4 s);
+# - timelines/stroll.png (48x16): the critter walks right, turns and walks
+#   back, 8 s;
+# - scenes/evening.png (48x16): the stroll with the torch on top. The two
+#   clocks (8 and 10 fps) share a 40 ticks-per-second clock and the scene
+#   loops every 8 s.
+#
+# What it shows:
+#
+# - a flipbook used as a panel element, playing at its own fps;
+# - `moveTo` there and back, the second one ending exactly at `duration`, so
+#   the loop is seamless;
+# - `appendTransforms` to face left on the way back (the loop restarts from
+#   the panel, so the flip is gone at the next loop);
+# - `seekFlipbook` to restart the walk cycle on the turn;
+# - `setVisible` to show a speech bubble for a moment;
+# - sprite inheritance with `overrideLines` for the leg poses, and a `scale`
+#   transform that stretches a 1x2 sprite into the whole backdrop.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  - id: evening
+    colors:
+      - { char: a, rgba: [70, 60, 120] }     # sky
+      - { char: g, rgba: [50, 110, 60] }     # grass
+      - { char: o, rgba: [30, 30, 40] }      # outline
+      - { char: L, rgba: [120, 200, 110] }   # body
+      - { char: w, rgba: [255, 255, 255] }
+      - { char: y, rgba: [250, 220, 80] }
+      - { char: f, rgba: [250, 150, 40] }    # flame
+      - { char: F, rgba: [255, 240, 160] }   # flame core
+      - { char: h, rgba: [250, 150, 40, 0.4] } # flame glow
+      - { char: t, rgba: [90, 60, 40] }      # post
+
+sprites:
+  - id: backdrop
+    _palette: evening
+    lines: ["a", "g"]
+
+  - id: critter
+    _palette: evening
+    lines:
+      - "..oooo.."
+      - ".oLLLLo."
+      - "oLLLwoLo"
+      - "oLLLLLLo"
+      - "oLLLLLLo"
+      - ".oLLLLo."
+      - "..o..o.."
+      - "..o..o.."
+  - id: critter-stride
+    _sprite: critter
+    overrideLines:
+      6: ".o....o."
+      7: "o......o"
+  - id: critter-cross
+    _sprite: critter
+    overrideLines:
+      6: "...oo..."
+      7: "...oo..."
+
+  - id: bubble
+    _palette: evening
+    lines:
+      - "www"
+      - "wyw"
+      - "wyw"
+      - "www"
+      - "wyw"
+      - "www"
+
+  - id: flame-a
+    _palette: evening
+    lines: [".h.", "hfh", "fFf", "fFf", ".f."]
+  - id: flame-b
+    _palette: evening
+    lines: ["h..", ".f.", "fFh", "fFf", ".f."]
+  - id: flame-c
+    _palette: evening
+    lines: ["..h", ".f.", "hFf", "fFf", ".f."]
+  - id: post
+    _palette: evening
+    lines: ["t", "t", "t", "t", "t", "t", "t"]
+
+flipbooks:
+  - id: walk
+    width: 8
+    height: 8
+    fps: 8
+    frames:
+      - { _sprite: critter-stride, coordinates: [0, 0], duration: 1 }
+      - { _sprite: critter, coordinates: [0, 0], duration: 1 }
+      - { _sprite: critter-cross, coordinates: [0, 0], duration: 1 }
+      - { _sprite: critter, coordinates: [0, 0], duration: 1 }
+
+  - id: flicker
+    width: 3
+    height: 5
+    fps: 10
+    frames:
+      - { _sprite: flame-a, coordinates: [0, 0], duration: 1 }
+      - { _sprite: flame-b, coordinates: [0, 0], duration: 2 }
+      - { _sprite: flame-c, coordinates: [0, 0], duration: 1 }
+
+panels:
+  - id: path
+    width: 48
+    height: 16
+    elements:
+      - _sprite: backdrop
+        coordinates: [0, 0]
+        zIndex: -1
+        transforms: [{ kind: scale, width: 48, height: 16 }]
+      - { id: critter, _flipbook: walk, coordinates: [2, 7] }
+      - { id: bubble, _sprite: bubble, coordinates: [39, 0], visible: false }
+
+  - id: torch-post
+    width: 3
+    height: 12
+    elements:
+      - { _sprite: post, coordinates: [1, 5] }
+      - { _flipbook: flicker, coordinates: [0, 0] }
+
+timelines:
+  - id: stroll
+    _panel: path
+    fps: 8
+    duration: 64
+    transitions:
+      - { kind: moveTo, _element: critter, coordinates: [38, 7], start: 0, duration: 32 }
+      - { kind: setVisible, _element: bubble, value: true, at: 30 }
+      - { kind: appendTransforms, _element: critter, transforms: [{ kind: flip, axis: x }], at: 32 }
+      - { kind: seekFlipbook, _element: critter, frameIndex: 0, at: 32 }
+      - { kind: moveTo, _element: critter, coordinates: [2, 7], start: 32, duration: 32 }
+      - { kind: setVisible, _element: bubble, value: false, at: 38 }
+
+scenes:
+  - id: evening
+    width: 48
+    height: 16
+    layers:
+      - { _timeline: stroll, coordinates: [0, 0] }
+      - { _panel: torch-post, coordinates: [44, 4], zIndex: 1 }
+
+exports:
+  - /flipbooks/walk
+  - /panels/torch-post
+  - /timelines/stroll
+  - /scenes/evening

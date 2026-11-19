@@ -1,4 +1,5 @@
-//! Deterministic PNG encoding, indexed or RGBA depending on the color count.
+//! Deterministic PNG and APNG encoding, indexed or RGBA depending on the
+//! color count.
 
 use std::collections::HashMap;
 
@@ -26,9 +27,16 @@ pub enum Encoding {
 
 /// Chooses the encoding of `image` from its distinct colors.
 pub fn choose(image: &Image) -> Encoding {
+    choose_all(std::iter::once(image))
+}
+
+/// Chooses one encoding for several images (the frames of an animation, in
+/// order) from their distinct colors together. Colors are taken by first
+/// appearance scanning the images in order, each in row-major order.
+pub fn choose_all<'a>(images: impl IntoIterator<Item = &'a Image>) -> Encoding {
     let mut seen: HashMap<Rgba, ()> = HashMap::new();
     let (mut translucent, mut opaque) = (Vec::new(), Vec::new());
-    for &p in image.pixels() {
+    for &p in images.into_iter().flat_map(|image| image.pixels()) {
         if seen.insert(p, ()).is_some() {
             continue;
         }
@@ -57,18 +65,30 @@ pub fn choose(image: &Image) -> Encoding {
     }
 }
 
-/// Encodes `image` as PNG bytes. Same image, same bytes.
-pub fn png(image: &Image) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
+/// Turns images into encoded pixel rows for one [`Encoding`].
+struct PixelRows {
+    /// Palette index of each color and the bit depth, when indexed.
+    indexed: Option<(HashMap<Rgba, u8>, u8)>,
+}
+
+impl PixelRows {
+    fn of(&self, image: &Image) -> Vec<u8> {
+        match &self.indexed {
+            None => image.pixels().iter().flat_map(|p| p.0).collect(),
+            Some((index, bit_depth)) => pack_indices(image, index, *bit_depth),
+        }
+    }
+}
+
+/// Sets color type, bit depth, `PLTE` and `tRNS` on `encoder`.
+fn configure<W: std::io::Write>(encoder: &mut png::Encoder<W>, encoding: Encoding) -> PixelRows {
     encoder.set_compression(png::Compression::Balanced);
     encoder.set_filter(png::Filter::Adaptive);
-
-    let data = match choose(image) {
+    let indexed = match encoding {
         Encoding::Rgba => {
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
-            image.pixels().iter().flat_map(|p| p.0).collect::<Vec<u8>>()
+            None
         }
         Encoding::Indexed {
             palette,
@@ -96,16 +116,73 @@ pub fn png(image: &Image) -> Vec<u8> {
                 .enumerate()
                 .map(|(i, &c)| (c, i as u8))
                 .collect();
-            pack_indices(image, &index, bit_depth)
+            Some((index, bit_depth))
         }
     };
+    PixelRows { indexed }
+}
 
+/// Encodes `image` as PNG bytes. Same image, same bytes.
+pub fn png(image: &Image) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
+    let data = configure(&mut encoder, choose(image));
     let mut writer = encoder
         .write_header()
         .expect("writing to a Vec cannot fail");
     writer
-        .write_image_data(&data)
+        .write_image_data(&data.of(image))
         .expect("image data matches the header");
+    writer.finish().expect("writing to a Vec cannot fail");
+    out
+}
+
+/// One APNG frame: the image and its delay `num / den` seconds.
+#[derive(Debug, Clone, Copy)]
+pub struct ApngFrame<'a> {
+    pub image: &'a Image,
+    pub delay: (u16, u16),
+}
+
+/// Encodes an animation as APNG bytes: infinite loop, frame 0 as the default
+/// image, every frame on the full canvas with `dispose_op` NONE and `blend_op`
+/// SOURCE, one palette for all frames. Same frames, same bytes.
+///
+/// Panics if `frames` is empty or the images differ in size.
+pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
+    let first = frames
+        .first()
+        .expect("an animation has at least one frame")
+        .image;
+    let (width, height) = (first.width(), first.height());
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    let data = configure(&mut encoder, choose_all(frames.iter().map(|f| f.image)));
+    encoder
+        .set_animated(frames.len() as u32, 0)
+        .expect("at least one frame");
+    let mut writer = encoder
+        .write_header()
+        .expect("writing to a Vec cannot fail");
+    for frame in frames {
+        assert_eq!(
+            (frame.image.width(), frame.image.height()),
+            (width, height),
+            "every frame has the canvas size"
+        );
+        writer
+            .set_frame_delay(frame.delay.0, frame.delay.1)
+            .expect("animated writer");
+        writer
+            .set_dispose_op(png::DisposeOp::None)
+            .expect("animated writer");
+        writer
+            .set_blend_op(png::BlendOp::Source)
+            .expect("animated writer");
+        writer
+            .write_image_data(&data.of(frame.image))
+            .expect("image data matches the header");
+    }
     writer.finish().expect("writing to a Vec cannot fail");
     out
 }

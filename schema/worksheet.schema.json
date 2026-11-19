@@ -509,6 +509,7 @@
                 },
                 "transitions": {
                     "description": "Transitions applied to the panel's elements.",
+                    "$comment": "Engine: `at` and `start` must be < `duration`; a moveTo's `start + duration` must be <= the timeline's `duration`; moveTo on the same element must not overlap; every `crop` added by appendTransforms must fit the element's chain at that point (applied by `at`, ties in array order).",
                     "type": "array",
                     "items": { "$ref": "#/$defs/transition" },
                     "minItems": 1

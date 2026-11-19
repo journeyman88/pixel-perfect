@@ -94,26 +94,52 @@ pub(crate) fn find_scene<'a>(ws: &'a ResolvedWorksheet, id: &str) -> Option<&'a 
     ws.model.scenes.iter().find(|s| s.id == id)
 }
 
+/// An image ready to be drawn: its top-left corner and its `zIndex`.
+#[derive(Debug, Clone, Copy)]
+pub struct Placed<'a> {
+    pub image: &'a Image,
+    pub coordinates: [i64; 2],
+    pub z_index: i64,
+}
+
+/// Draws `items` on a transparent `width` x `height` canvas in ascending
+/// `zIndex`, ties in slice order. Callers pass only visible items. Static and
+/// animated panels and scenes all go through this function.
+pub fn flatten(width: u32, height: u32, items: &[Placed]) -> Image {
+    let mut canvas = Image::transparent(width, height);
+    for i in drawing_order(items, |p| p.z_index) {
+        let [x, y] = items[i].coordinates;
+        draw(&mut canvas, items[i].image, x, y);
+    }
+    canvas
+}
+
 /// Renders the static panel `id`.
 ///
 /// Panics if `id` is not a panel or the panel is animated; the export plan
 /// only passes static panels.
 pub fn panel(ws: &ResolvedWorksheet, id: &str) -> Image {
     let panel = find_panel(ws, id).unwrap_or_else(|| panic!("unknown panel {id:?}"));
-    let mut canvas = Image::transparent(panel.width, panel.height);
-    for i in drawing_order(&panel.elements, |e| e.z_index) {
-        let element = &panel.elements[i];
-        if !element.visible {
-            continue;
-        }
-        let ElementSource::Sprite(sprite) = element.source() else {
-            unreachable!("panel {id:?} is animated");
-        };
-        let image = raster::apply_all(&render::sprite(ws, sprite), &element.transforms);
-        let [x, y] = element.coordinates;
-        draw(&mut canvas, &image, x, y);
-    }
-    canvas
+    let visible: Vec<_> = panel.elements.iter().filter(|e| e.visible).collect();
+    let images: Vec<Image> = visible
+        .iter()
+        .map(|element| {
+            let ElementSource::Sprite(sprite) = element.source() else {
+                unreachable!("panel {id:?} is animated");
+            };
+            raster::apply_all(&render::sprite(ws, sprite), &element.transforms)
+        })
+        .collect();
+    let items: Vec<Placed> = visible
+        .iter()
+        .zip(&images)
+        .map(|(e, image)| Placed {
+            image,
+            coordinates: e.coordinates,
+            z_index: e.z_index,
+        })
+        .collect();
+    flatten(panel.width, panel.height, &items)
 }
 
 /// Renders the static scene `id`: each panel layer is flattened on its own
@@ -122,14 +148,25 @@ pub fn panel(ws: &ResolvedWorksheet, id: &str) -> Image {
 /// Panics if `id` is not a scene or the scene is animated.
 pub fn scene(ws: &ResolvedWorksheet, id: &str) -> Image {
     let scene = find_scene(ws, id).unwrap_or_else(|| panic!("unknown scene {id:?}"));
-    let mut canvas = Image::transparent(scene.width, scene.height);
-    for i in drawing_order(&scene.layers, |l| l.z_index) {
-        let layer = &scene.layers[i];
-        let Some(panel_id) = &layer.panel else {
-            unreachable!("scene {id:?} is animated");
-        };
-        let [x, y] = layer.coordinates;
-        draw(&mut canvas, &panel(ws, panel_id), x, y);
-    }
-    canvas
+    let images: Vec<Image> = scene
+        .layers
+        .iter()
+        .map(|layer| {
+            let Some(panel_id) = &layer.panel else {
+                unreachable!("scene {id:?} is animated");
+            };
+            panel(ws, panel_id)
+        })
+        .collect();
+    let items: Vec<Placed> = scene
+        .layers
+        .iter()
+        .zip(&images)
+        .map(|(l, image)| Placed {
+            image,
+            coordinates: l.coordinates,
+            z_index: l.z_index,
+        })
+        .collect();
+    flatten(scene.width, scene.height, &items)
 }

@@ -190,7 +190,7 @@ fn render_readme_example() {
 }
 
 #[test]
-fn render_unsupported_explicit_export_is_an_error() {
+fn render_writes_animations() {
     let dir = tempfile::tempdir().unwrap();
     let mut doc: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(fixture("valid/readme-example.json")).unwrap(),
@@ -202,22 +202,19 @@ fn render_unsupported_explicit_export_is_an_error() {
         .push("/flipbooks/beat".into());
     let sheet = worksheet_file(dir.path(), &doc.to_string());
     let out = dir.path().join("out");
-    let output = cli()
+    cli()
         .arg("render")
         .arg(&sheet)
         .arg("-o")
         .arg(&out)
         .assert()
-        .code(1)
-        .get_output()
-        .clone();
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("/exports/2"), "{stderr}");
-    assert!(!out.exists());
+        .code(0);
+    let apng = std::fs::read(out.join("flipbooks/beat.png")).unwrap();
+    assert!(apng.windows(4).any(|w| w == b"acTL"), "beat is an APNG");
 }
 
 #[test]
-fn render_notice_for_implicitly_skipped_resources() {
+fn render_without_exports_prints_no_notice() {
     let dir = tempfile::tempdir().unwrap();
     let mut doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(fixture("valid/full.json")).unwrap())
@@ -234,10 +231,9 @@ fn render_notice_for_implicitly_skipped_resources() {
         .get_output()
         .clone();
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains("note: skipped 1 resource(s) in flipbooks"),
-        "{stderr}"
-    );
+    assert!(!stderr.contains("skipped"), "{stderr}");
+    assert!(dir.path().join("out/timelines/walk.png").exists());
+    assert!(dir.path().join("out/scenes/night.png").exists());
 }
 
 #[test]

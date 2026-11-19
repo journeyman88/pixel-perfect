@@ -10,11 +10,12 @@ use std::path::{Path, PathBuf};
 use blake2::{Blake2b, Digest, digest::consts::U8};
 use serde::Serialize;
 
+use crate::animate::{self, Animation, MAX_FRAMES};
 use crate::error::Diagnostic;
-use crate::model::ElementSource;
+use crate::model::{ElementSource, Panel, Transform, Transition};
 use crate::raster::{self, Image};
 use crate::semantic::ResolvedWorksheet;
-use crate::{compose, encode, render};
+use crate::{encode, render, time};
 
 /// Collections that can be exported, in worksheet order.
 const COLLECTIONS: [&str; 5] = ["sprites", "flipbooks", "panels", "timelines", "scenes"];
@@ -128,13 +129,22 @@ pub struct PlannedOutput {
     /// Size after scaling.
     pub width: u32,
     pub height: u32,
+    /// Loop length of an animated resource; `None` for a static image.
+    pub loop_seconds: Option<Fraction>,
+}
+
+/// An exact number of seconds, reduced to lowest terms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Fraction {
+    pub num: u64,
+    pub den: u64,
 }
 
 /// Everything a render will do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub outputs: Vec<PlannedOutput>,
-    /// Informational messages, e.g. resources skipped because unsupported.
+    /// Informational messages printed on standard error.
     pub notices: Vec<String>,
 }
 
@@ -153,6 +163,12 @@ pub struct ManifestEntry {
     pub path: String,
     pub width: u32,
     pub height: u32,
+    /// Frames written, for animated resources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frames: Option<usize>,
+    /// Loop length in seconds, for animated resources.
+    #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    pub loop_seconds: Option<Fraction>,
 }
 
 /// Why a render failed.
@@ -207,9 +223,18 @@ fn locate(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Option<(usize, 
             let s = ws.sprites.get(id)?;
             Some((i, (s.width(), s.height())))
         }
+        "flipbooks" => {
+            let i = m.flipbooks.iter().position(|f| f.id == id)?;
+            Some((i, (m.flipbooks[i].width, m.flipbooks[i].height)))
+        }
         "panels" => {
             let i = m.panels.iter().position(|p| p.id == id)?;
             Some((i, (m.panels[i].width, m.panels[i].height)))
+        }
+        "timelines" => {
+            let i = m.timelines.iter().position(|t| t.id == id)?;
+            let panel = m.panels.iter().find(|p| p.id == m.timelines[i].panel)?;
+            Some((i, (panel.width, panel.height)))
         }
         "scenes" => {
             let i = m.scenes.iter().position(|s| s.id == id)?;
@@ -229,18 +254,6 @@ fn collection_ids<'a>(ws: &'a ResolvedWorksheet, collection: &str) -> Vec<&'a st
         "scenes" => m.scenes.iter().map(|s| s.id.as_str()).collect(),
         _ => Vec::new(),
     }
-}
-
-/// Why the resource `id` of `collection` cannot be rendered by this version,
-/// if it cannot.
-fn unsupported(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Option<String> {
-    let animated = match collection {
-        "sprites" => false,
-        "panels" => compose::find_panel(ws, id).is_some_and(compose::is_animated_panel),
-        "scenes" => compose::find_scene(ws, id).is_some_and(|s| compose::is_animated_scene(ws, s)),
-        _ => return Some(format!("{collection} are not supported yet")),
-    };
-    animated.then(|| format!("animated {collection} are not supported yet"))
 }
 
 /// Checks the size of every image built to render a resource against the
@@ -274,31 +287,101 @@ impl SizeCheck {
         size
     }
 
+    /// Follows a transform chain from `size`, checking each step.
+    fn chain(&mut self, mut size: (u32, u32), transforms: &[Transform], base: &str) -> (u32, u32) {
+        for (t, transform) in transforms.iter().enumerate() {
+            size = raster::output_size(size, transform);
+            self.check(
+                format!("{base}/{t}"),
+                "the result of this transform",
+                wide(size),
+            );
+        }
+        size
+    }
+
+    /// Every frame of a flipbook (sprite and transforms) and its canvas.
+    fn flipbook(&mut self, ws: &ResolvedWorksheet, id: &str) -> (u32, u32) {
+        let Some(index) = ws.model.flipbooks.iter().position(|f| f.id == id) else {
+            return (0, 0);
+        };
+        let fb = &ws.model.flipbooks[index];
+        for (k, frame) in fb.frames.iter().enumerate() {
+            let base = format!("/flipbooks/{index}/frames/{k}");
+            let size = self.sprite(ws, &frame.sprite, base.clone());
+            self.chain(size, &frame.transforms, &format!("{base}/transforms"));
+        }
+        let size = (fb.width, fb.height);
+        self.check(
+            format!("/flipbooks/{index}"),
+            &format!("flipbook {id:?}"),
+            wide(size),
+        );
+        size
+    }
+
+    /// The source of a panel element and its own transforms; returns the size
+    /// at the end of the chain.
+    fn element(&mut self, ws: &ResolvedWorksheet, index: usize, e: usize) -> (u32, u32) {
+        let element = &ws.model.panels[index].elements[e];
+        let base = format!("/panels/{index}/elements/{e}");
+        let size = match element.source() {
+            ElementSource::Sprite(sprite) => self.sprite(ws, sprite, base.clone()),
+            ElementSource::Flipbook(f) => self.flipbook(ws, f),
+        };
+        self.chain(size, &element.transforms, &format!("{base}/transforms"))
+    }
+
+    /// A panel as drawn on its own: visible elements only.
     fn panel(&mut self, ws: &ResolvedWorksheet, index: usize) {
         let panel = &ws.model.panels[index];
         for (e, element) in panel.elements.iter().enumerate() {
-            let ElementSource::Sprite(sprite) = element.source() else {
-                continue; // hidden flipbooks are not drawn
-            };
-            if !element.visible {
-                continue;
-            }
-            let base = format!("/panels/{index}/elements/{e}");
-            let mut size = self.sprite(ws, sprite, base.clone());
-            for (t, transform) in element.transforms.iter().enumerate() {
-                size = raster::output_size(size, transform);
-                self.check(
-                    format!("{base}/transforms/{t}"),
-                    "the result of this transform",
-                    wide(size),
-                );
+            if element.visible {
+                self.element(ws, index, e);
             }
         }
+        self.panel_canvas(index, panel);
+    }
+
+    fn panel_canvas(&mut self, index: usize, panel: &Panel) {
         self.check(
             format!("/panels/{index}"),
             &format!("panel {:?}", panel.id),
             wide((panel.width, panel.height)),
         );
+    }
+
+    /// A timeline: every element of its panel (any may become visible), and
+    /// every chain extended by `appendTransforms`.
+    fn timeline(&mut self, ws: &ResolvedWorksheet, index: usize) {
+        let timeline = &ws.model.timelines[index];
+        let Some(p) = ws.model.panels.iter().position(|p| p.id == timeline.panel) else {
+            return;
+        };
+        let panel = &ws.model.panels[p];
+        for (e, element) in panel.elements.iter().enumerate() {
+            let own = self.element(ws, p, e);
+            let Some(id) = &element.id else { continue };
+            let mut size = own;
+            for j in timeline.instant_order() {
+                match &timeline.transitions[j] {
+                    Transition::AppendTransforms {
+                        element,
+                        transforms,
+                        ..
+                    } if element == id => {
+                        size = self.chain(
+                            size,
+                            transforms,
+                            &format!("/timelines/{index}/transitions/{j}/transforms"),
+                        );
+                    }
+                    Transition::ResetTransforms { element, .. } if element == id => size = own,
+                    _ => {}
+                }
+            }
+        }
+        self.panel_canvas(p, panel);
     }
 
     fn scene(&mut self, ws: &ResolvedWorksheet, index: usize) {
@@ -308,6 +391,11 @@ impl SizeCheck {
                 && let Some(p) = ws.model.panels.iter().position(|p| &p.id == id)
             {
                 self.panel(ws, p);
+            }
+            if let Some(id) = &layer.timeline
+                && let Some(t) = ws.model.timelines.iter().position(|t| &t.id == id)
+            {
+                self.timeline(ws, t);
             }
         }
         self.check(
@@ -322,43 +410,70 @@ fn wide((w, h): (u32, u32)) -> (u64, u64) {
     (w.into(), h.into())
 }
 
+/// Checks the time model of an animated export without rendering it: the loop
+/// fits, the frames fit the size limit and APNG's frame count, and every
+/// segment can be written as an exact APNG delay. Returns the loop length.
+fn plan_animation(
+    ws: &ResolvedWorksheet,
+    collection: &str,
+    id: &str,
+    (w, h): (u64, u64),
+    options: &RenderOptions,
+) -> Result<Fraction, String> {
+    let animation = Animation::new(ws, collection, id)
+        .map_err(|_| "the clock or the loop of this animation is too long to compute".to_owned())?;
+    let frame_bytes = (w * h * 4).max(1);
+    let by_size = options.max_image_size.map_or(usize::MAX, |max| {
+        usize::try_from(max / frame_bytes).unwrap_or(usize::MAX)
+    });
+    // A single frame over the limit is reported by the size walk.
+    let limit = by_size.clamp(1, MAX_FRAMES);
+    let ticks = animation.change_ticks(limit).map_err(|_| {
+        if by_size < MAX_FRAMES {
+            format!(
+                "the animation needs more than {limit} frames of {w}x{h} (over {}), more than the {} image size limit; raise it with --max-image-size",
+                human_size(u128::from(frame_bytes) * (limit as u128 + 1)),
+                human_size(u128::from(options.max_image_size.unwrap_or(0))),
+            )
+        } else {
+            format!("the animation needs more than {MAX_FRAMES} frames, the APNG maximum")
+        }
+    })?;
+    if let Some((tick, len)) = animation.delay_overflow(&ticks) {
+        let (num, den) = time::reduced(len, animation.clock);
+        let rates: Vec<String> = animation.rates.iter().map(u32::to_string).collect();
+        return Err(format!(
+            "a frame at {}/{} s lasts {num}/{den} s, which APNG cannot store exactly (denominator over 65535); it comes from combining the rates {} fps",
+            time::reduced(tick, animation.clock).0,
+            time::reduced(tick, animation.clock).1,
+            rates.join(", ")
+        ));
+    }
+    let (num, den) = time::reduced(animation.loop_len, animation.clock);
+    Ok(Fraction { num, den })
+}
+
 /// Decides every output of a render, or returns every problem found.
 pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
-    let mut notices = Vec::new();
+    let notices = Vec::new();
 
-    // Selection: (collection, id).
+    // Selection: (collection, id). Every collection is exportable.
     let mut selected: Vec<(&'static str, String)> = Vec::new();
     match &ws.model.exports {
         Some(exports) => {
-            for (i, pointer) in exports.iter().enumerate() {
+            for pointer in exports {
                 let (collection, id) = pointer[1..].split_once('/').unwrap_or_default();
                 let Some(&collection) = COLLECTIONS.iter().find(|&&c| c == collection) else {
                     continue; // unreachable after validation
                 };
-                match unsupported(ws, collection, id) {
-                    None => selected.push((collection, id.to_owned())),
-                    Some(reason) => diagnostics.push(Diagnostic::at(
-                        format!("/exports/{i}"),
-                        format!("cannot export {pointer:?}: {reason}"),
-                    )),
-                }
+                selected.push((collection, id.to_owned()));
             }
         }
         None => {
             for collection in COLLECTIONS {
-                let mut skipped = Vec::new();
                 for id in collection_ids(ws, collection) {
-                    match unsupported(ws, collection, id) {
-                        None => selected.push((collection, id.to_owned())),
-                        Some(reason) => skipped.push(reason),
-                    }
-                }
-                if let Some(reason) = skipped.first() {
-                    notices.push(format!(
-                        "skipped {} resource(s) in {collection}: {reason}",
-                        skipped.len()
-                    ));
+                    selected.push((collection, id.to_owned()));
                 }
             }
         }
@@ -418,6 +533,18 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
             ));
             continue;
         }
+        let loop_seconds = if animate::is_animated(ws, collection, &id) {
+            let resource = format!("/{collection}/{index}");
+            match plan_animation(ws, collection, &id, (sw, sh), options) {
+                Ok(seconds) => Some(seconds),
+                Err(message) => {
+                    diagnostics.push(Diagnostic::at(resource, message));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         outputs.push(PlannedOutput {
             pointer: format!("/{collection}/{id}"),
             collection,
@@ -425,6 +552,7 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
             id,
             width: sw as u32,
             height: sh as u32,
+            loop_seconds,
         });
     }
 
@@ -442,7 +570,11 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
                 "sprites" => {
                     sizes.sprite(ws, &output.id, format!("/sprites/{index}"));
                 }
+                "flipbooks" => {
+                    sizes.flipbook(ws, &output.id);
+                }
                 "panels" => sizes.panel(ws, index),
+                "timelines" => sizes.timeline(ws, index),
                 "scenes" => sizes.scene(ws, index),
                 _ => {}
             }
@@ -470,7 +602,36 @@ pub fn image(ws: &ResolvedWorksheet, output: &PlannedOutput, scale: u32) -> Imag
     render::resource(ws, output.collection, &output.id).upscale(scale)
 }
 
-/// Builds the manifest of a plan.
+/// Renders an animated output and encodes it as APNG; returns the bytes and
+/// the number of frames written.
+pub fn animation_bytes(
+    ws: &ResolvedWorksheet,
+    output: &PlannedOutput,
+    scale: u32,
+) -> (Vec<u8>, usize) {
+    let animation = Animation::new(ws, output.collection, &output.id)
+        .expect("the export plan checked the time model");
+    let frames: Vec<(Image, Vec<(u16, u16)>)> = animation
+        .frames()
+        .into_iter()
+        .map(|(image, ticks)| {
+            let delays =
+                time::delays(ticks, animation.clock).expect("the export plan checked every delay");
+            (image.upscale(scale), delays)
+        })
+        .collect();
+    let apng_frames: Vec<encode::ApngFrame> = frames
+        .iter()
+        .flat_map(|(image, delays)| {
+            delays
+                .iter()
+                .map(move |&delay| encode::ApngFrame { image, delay })
+        })
+        .collect();
+    (encode::apng(&apng_frames), apng_frames.len())
+}
+
+/// Builds the manifest of a plan. `frames` is filled in by [`write`].
 pub fn manifest(plan: &Plan, options: &RenderOptions) -> Manifest {
     Manifest {
         format: options.format.extension(),
@@ -486,6 +647,8 @@ pub fn manifest(plan: &Plan, options: &RenderOptions) -> Manifest {
                         path: o.path.clone(),
                         width: o.width,
                         height: o.height,
+                        frames: None,
+                        loop_seconds: o.loop_seconds,
                     },
                 )
             })
@@ -510,14 +673,21 @@ pub fn write(
     plan: &Plan,
     options: &RenderOptions,
 ) -> Result<Manifest, RenderError> {
+    let mut manifest = manifest(plan, options);
     for output in &plan.outputs {
-        let image = image(ws, output, options.scale);
-        let bytes = match options.format {
-            OutputFormat::Png => encode::png(&image),
+        let bytes = if output.loop_seconds.is_some() {
+            let (bytes, frames) = animation_bytes(ws, output, options.scale);
+            if let Some(entry) = manifest.files.get_mut(&output.pointer) {
+                entry.frames = Some(frames);
+            }
+            bytes
+        } else {
+            match options.format {
+                OutputFormat::Png => encode::png(&image(ws, output, options.scale)),
+            }
         };
         write_file(&options.output_path.join(&output.path), &bytes)?;
     }
-    let manifest = manifest(plan, options);
     let mut json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
     json.push('\n');
     write_file(&options.output_path.join("manifest.json"), json.as_bytes())?;

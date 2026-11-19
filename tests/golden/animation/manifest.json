@@ -1,0 +1,87 @@
+{
+  "format": "png",
+  "scale": 1,
+  "safeBuild": false,
+  "files": {
+    "/flipbooks/sparkle": {
+      "path": "flipbooks/sparkle.png",
+      "width": 1,
+      "height": 1,
+      "frames": 3,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
+    "/panels/dance-floor": {
+      "path": "panels/dance-floor.png",
+      "width": 8,
+      "height": 4
+    },
+    "/panels/lamp": {
+      "path": "panels/lamp.png",
+      "width": 4,
+      "height": 4
+    },
+    "/scenes/show": {
+      "path": "scenes/show.png",
+      "width": 12,
+      "height": 4,
+      "frames": 20,
+      "loop": {
+        "num": 2,
+        "den": 1
+      }
+    },
+    "/sprites/floor": {
+      "path": "sprites/floor.png",
+      "width": 8,
+      "height": 4
+    },
+    "/sprites/hero": {
+      "path": "sprites/hero.png",
+      "width": 2,
+      "height": 2
+    },
+    "/sprites/lamp-off": {
+      "path": "sprites/lamp-off.png",
+      "width": 2,
+      "height": 2
+    },
+    "/sprites/lamp-on": {
+      "path": "sprites/lamp-on.png",
+      "width": 2,
+      "height": 2
+    },
+    "/sprites/spark-a": {
+      "path": "sprites/spark-a.png",
+      "width": 1,
+      "height": 1
+    },
+    "/sprites/spark-b": {
+      "path": "sprites/spark-b.png",
+      "width": 1,
+      "height": 1
+    },
+    "/timelines/dance": {
+      "path": "timelines/dance.png",
+      "width": 8,
+      "height": 4,
+      "frames": 19,
+      "loop": {
+        "num": 2,
+        "den": 1
+      }
+    },
+    "/timelines/pulse": {
+      "path": "timelines/pulse.png",
+      "width": 4,
+      "height": 4,
+      "frames": 2,
+      "loop": {
+        "num": 1,
+        "den": 1
+      }
+    }
+  }
+}

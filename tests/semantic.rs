@@ -95,6 +95,138 @@ fn seek_flipbook_frame_index_out_of_range() {
     );
 }
 
+// Timeline transitions (the `walk` timeline of full.json has `duration` 40)
+
+#[test]
+fn instant_transition_after_the_end() {
+    let e = invalid_with(&[("/timelines/0/transitions/1/at", json!(40))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/1/at",
+        "at 40 is not inside the timeline (duration 40)",
+    );
+}
+
+#[test]
+fn movement_ending_at_the_loop_boundary() {
+    let mut doc = full();
+    set(&mut doc, "/timelines/0/transitions/0/start", json!(30));
+    set(&mut doc, "/timelines/0/transitions/0/duration", json!(10));
+    load(doc);
+}
+
+#[test]
+fn movement_past_the_end() {
+    let e = invalid_with(&[
+        ("/timelines/0/transitions/0/start", json!(35)),
+        ("/timelines/0/transitions/0/duration", json!(10)),
+    ]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/0/duration",
+        "ends at 45, after the end of the timeline (40)",
+    );
+}
+
+#[test]
+fn movement_starting_after_the_end() {
+    let e = invalid_with(&[("/timelines/0/transitions/0/start", json!(40))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/0/start",
+        "start 40 is not inside",
+    );
+}
+
+fn second_move(start: u64) -> serde_json::Value {
+    json!({ "kind": "moveTo", "_element": "hero", "coordinates": [0, 0], "start": start, "duration": 5 })
+}
+
+#[test]
+fn overlapping_movements() {
+    // The first moveTo runs from 0 to 30.
+    let e = invalid_with(&[("/timelines/0/transitions/2", second_move(5))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/2/start",
+        "moveTo on element \"hero\" starts at 5, while the moveTo at index 0 runs until 30",
+    );
+}
+
+#[test]
+fn back_to_back_movements() {
+    let mut doc = full();
+    set(&mut doc, "/timelines/0/transitions/2", second_move(30));
+    load(doc);
+}
+
+#[test]
+fn movements_on_different_elements_may_overlap() {
+    let mut doc = full();
+    let mut other = second_move(5);
+    other["_element"] = json!("spinner");
+    set(&mut doc, "/timelines/0/transitions/2", other);
+    load(doc);
+}
+
+// Crops on chains extended by appendTransforms (`hero` is a 4x8 sprite)
+
+fn append(transform: serde_json::Value, at: u64) -> serde_json::Value {
+    json!({ "kind": "appendTransforms", "_element": "hero", "transforms": [transform], "at": at })
+}
+
+fn rotate() -> serde_json::Value {
+    json!({ "kind": "rotate", "degrees": 90 })
+}
+
+fn crop() -> serde_json::Value {
+    json!({ "kind": "crop", "area": [0, 0, 8, 4] })
+}
+
+#[test]
+fn appended_crop_after_an_appended_rotation() {
+    let mut doc = full();
+    set(&mut doc, "/timelines/0/transitions/3", append(rotate(), 2));
+    set(&mut doc, "/timelines/0/transitions/2", append(crop(), 4));
+    load(doc);
+}
+
+#[test]
+fn appended_crop_out_of_bounds() {
+    let e = invalid_with(&[("/timelines/0/transitions/3", append(crop(), 4))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/3/transforms/0/area",
+        "does not fit in the 4x8 image",
+    );
+}
+
+#[test]
+fn reset_restores_the_declared_chain() {
+    let e = invalid_with(&[
+        ("/timelines/0/transitions/3", append(rotate(), 2)),
+        (
+            "/timelines/0/transitions/4",
+            json!({ "kind": "resetTransforms", "_element": "hero", "at": 3 }),
+        ),
+        ("/timelines/0/transitions/2", append(crop(), 4)),
+    ]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/2/transforms/0/area",
+        "does not fit in the 4x8 image",
+    );
+}
+
+#[test]
+fn appended_chain_follows_at_order_not_array_order() {
+    // The crop comes first in the array but is applied after the rotation.
+    let mut doc = full();
+    set(&mut doc, "/timelines/0/transitions/2", append(crop(), 30));
+    set(&mut doc, "/timelines/0/transitions/3", append(rotate(), 20));
+    load(doc);
+}
+
 // Inheritance cycles
 
 #[test]

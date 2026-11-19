@@ -6,9 +6,9 @@ You describe palettes, sprites, animations and compositions in a plain-text
 file. pixel-perfect turns them into pixel-exact images: same input, same bytes,
 every time. No antialiasing, no filtering, nearest-neighbor only.
 
-> **Status:** early stage. Worksheets can be loaded and validated, and sprites,
-> panels and scenes can be rendered to PNG. Animations (flipbooks, timelines,
-> and panels or scenes that contain them) are not rendered yet. Development is planned with
+> **Status:** early stage. Worksheets can be loaded and validated; sprites and
+> static panels and scenes render to PNG, and animations (flipbooks, timelines,
+> and panels or scenes that contain them) render to APNG. Development is planned with
 > [OpenSpec](https://github.com/Fission-AI/OpenSpec) (see [`openspec/`](openspec/)).
 
 ## Usage
@@ -55,7 +55,9 @@ BLAKE2b-64 of the id (`printf '%s' hero | b2sum -l 64` → `8737b11b474b218b`).
 Any id then works, and a file keeps its name as long as its id is unchanged.
 
 Every render also writes `<output-path>/manifest.json`, mapping each exported
-resource to its file and size, so tools never have to guess file names:
+resource to its file and size, so tools never have to guess file names.
+Animated resources also give the number of `frames` written and the `loop`
+length in seconds as an exact fraction:
 
 ```json
 {
@@ -63,7 +65,11 @@ resource to its file and size, so tools never have to guess file names:
   "scale": 4,
   "safeBuild": false,
   "files": {
-    "/sprites/hero": { "path": "sprites/hero.png", "width": 28, "height": 24 }
+    "/sprites/hero": { "path": "sprites/hero.png", "width": 28, "height": 24 },
+    "/flipbooks/beat": {
+      "path": "flipbooks/beat.png", "width": 28, "height": 24,
+      "frames": 2, "loop": { "num": 1, "den": 1 }
+    }
   }
 }
 ```
@@ -75,9 +81,11 @@ Output is deterministic: the same worksheet and options give byte-identical
 files. Nothing is written if the worksheet or the export request is invalid,
 and files from earlier renders are never deleted.
 
-Exporting resources that cannot be rendered yet (flipbooks, timelines, and
-panels or scenes containing them) is an error when they are listed in
-`exports`; when `exports` is omitted they are skipped with a note.
+Flipbooks, timelines, and panels or scenes that play a flipbook or a timeline
+are written as **APNG** (still with the `.png` extension, at the same paths).
+They loop forever, every frame covers the whole canvas, all frames share one
+palette chosen by the same color count, and the first frame is the default
+image, so viewers without APNG support show it. See [Animation](#animation).
 
 Panels and scenes are composed with **source-over** on non-premultiplied alpha,
 computed in integer arithmetic with a fixed rounding rule, so semi-transparent
@@ -89,11 +97,36 @@ then composited as one layer.
 `--max-image-size` guards against worksheets that would need huge amounts of
 memory, for example a panel declared 100000×100000 or a `scale` transform to a
 giant size. Every image the engine builds (sprites, transform results,
-canvases, the final image after `--scale`) is measured as RGBA8 bytes before
-anything is rendered; if one is over the limit, the render fails and names the
-resource. SIZE is a number of bytes with an optional `KiB`, `MiB`, `GiB` or
+including transforms added by `appendTransforms`, canvases, the final image
+after `--scale`) is measured as RGBA8 bytes before anything is rendered; if one
+is over the limit, the render fails and names the resource. For an animation
+the limit applies to all its frames together, since they are kept in memory
+until the shared palette is known. SIZE is a number of bytes with an optional `KiB`, `MiB`, `GiB` or
 `TiB` suffix, or `none` for no limit. It is a guard against mistakes, not a
 memory budget: the peak memory use is a few times the largest image.
+
+### Animation
+
+Time is exact. Each animated resource runs on a clock whose rate is the least
+common multiple of the `fps` values it involves (a 12 fps timeline with an
+8 fps flipbook runs at 24 ticks per second), and every frame boundary is a whole
+number of ticks. Each APNG frame delay is that duration as a reduced fraction
+of a second, never rounded; frames too long for APNG's 16-bit delay are split
+into identical frames. Consecutive identical frames are merged. A flipbook,
+timeline, panel or scene layer loops on its own length, and the file loops on
+the least common multiple of them all. In the rare case of `fps` values whose
+combination needs a delay denominator above 65535, the render fails before
+writing anything and lists the rates.
+
+A timeline starts every loop from its panel's state. Instant transitions
+(`setVisible`, `moveToZ`, `appendTransforms`, `resetTransforms`,
+`seekFlipbook`) apply at frame-unit `at`, ties in array order. `moveTo` moves
+linearly from where the element is at `start` to `coordinates` at
+`start + duration`; the offset at frame-unit `t` is
+`(p1 − p0) · (t − start) / duration` rounded to the nearest integer with halves
+away from zero, so a movement to the left mirrors the same movement to the
+right. Flipbook elements play at their own `fps`, restart at every timeline
+loop, and `seekFlipbook` jumps them to the start of `frames[frameIndex]`.
 
 ## Why
 
@@ -110,9 +143,9 @@ memory budget: the peak memory use is a few times the largest image.
 
 | Input (worksheet) | Status |
 |---|---|
-| JSON | planned (first) |
-| YAML | planned (first) |
-| TOML | planned (first) |
+| JSON | supported |
+| YAML | supported |
+| TOML | supported |
 | XML (dedicated schema) | future |
 
 JSON, YAML and TOML all map onto the same data model and are validated against
@@ -120,8 +153,8 @@ the same JSON Schema.
 
 | Output | Status |
 |---|---|
-| PNG | planned (first) |
-| APNG (animated PNG) | planned (first) |
+| PNG | supported |
+| APNG (animated PNG) | supported |
 | WebP / animated WebP (lossless) | later |
 
 The output format and the integer upscale factor are chosen on the command line,
@@ -195,9 +228,9 @@ A heart, a darker variant, and a two-frame beating animation built from them:
 ```
 
 `pixel-perfect render heart.json -o out --scale 8` writes
-`out/sprites/heart.png` and `out/sprites/heart-dark.png` (56×48 each). The
-`beat` flipbook is already valid, but it is not exported yet: add
-`"/flipbooks/beat"` to `exports` once animations can be rendered.
+`out/sprites/heart.png` and `out/sprites/heart-dark.png` (56×48 each). Add
+`"/flipbooks/beat"` to `exports` to also get `out/flipbooks/beat.png`, an APNG
+that loops every second (3/4 s bright, 1/4 s dark).
 
 More worksheets are in [`examples/`](examples/).
 

@@ -271,6 +271,30 @@ impl Transition {
             | Transition::SeekFlipbook { element, .. } => element,
         }
     }
+
+    /// Frame-unit at which an instant transition takes effect; `None` for `moveTo`.
+    pub fn at(&self) -> Option<u64> {
+        match *self {
+            Transition::MoveTo { .. } => None,
+            Transition::SetVisible { at, .. }
+            | Transition::MoveToZ { at, .. }
+            | Transition::AppendTransforms { at, .. }
+            | Transition::ResetTransforms { at, .. }
+            | Transition::SeekFlipbook { at, .. } => Some(at),
+        }
+    }
+}
+
+impl Timeline {
+    /// Indices of the instant transitions in application order: by `at`, ties
+    /// in array order.
+    pub fn instant_order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.transitions.len())
+            .filter(|&i| self.transitions[i].at().is_some())
+            .collect();
+        order.sort_by_key(|&i| self.transitions[i].at());
+        order
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

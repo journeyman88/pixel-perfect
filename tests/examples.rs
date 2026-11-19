@@ -89,3 +89,36 @@ fn masquerade_example_renders_its_scene() {
     let png = std::fs::read(dir.path().join("scenes/masquerade.png")).unwrap();
     assert_eq!(header(&png), (256, 256, 8, 3));
 }
+
+#[test]
+fn animation_example_renders_its_animations() {
+    let ws = pixel_perfect::load_file(&example("animation.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    assert!(plan.notices.is_empty());
+    assert_eq!(plan.outputs.len(), 4);
+    // (pointer, width, height, loop in seconds as num/den)
+    for (pointer, width, height, seconds) in [
+        ("/flipbooks/walk", 8, 8, (1, 2)),
+        ("/panels/torch-post", 3, 12, (2, 5)),
+        ("/timelines/stroll", 48, 16, (8, 1)),
+        ("/scenes/evening", 48, 16, (8, 1)),
+    ] {
+        let entry = &manifest.files[pointer];
+        assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
+        let fraction = entry.loop_seconds.expect("animated");
+        assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
+        let png = std::fs::read(dir.path().join(&entry.path)).unwrap();
+        assert!(
+            images::chunks(&png).iter().any(|c| c == "acTL"),
+            "{pointer} is an APNG"
+        );
+    }
+}

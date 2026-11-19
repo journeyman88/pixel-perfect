@@ -64,6 +64,53 @@ pub fn header(png: &[u8]) -> (u32, u32, u8, u8) {
     )
 }
 
+/// One decoded APNG frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedFrame {
+    pub pixels: Vec<Rgba>,
+    pub delay: (u16, u16),
+    /// (x offset, y offset, width, height, dispose op, blend op)
+    pub control: (u32, u32, u32, u32, u8, u8),
+}
+
+/// Decodes every frame of an APNG to RGBA8, with `num_plays`.
+pub fn decode_apng(data: &[u8]) -> (Vec<DecodedFrame>, u32) {
+    let mut decoder = png::Decoder::new(Cursor::new(data));
+    decoder.set_transformations(png::Transformations::EXPAND);
+    let mut reader = decoder.read_info().unwrap();
+    let actl = reader.info().animation_control.expect("acTL");
+    let mut frames = Vec::new();
+    for _ in 0..actl.num_frames {
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut buf).unwrap();
+        let fc = *reader.info().frame_control().expect("fcTL");
+        let pixels = match info.color_type {
+            png::ColorType::Rgba => buf[..info.buffer_size()]
+                .chunks(4)
+                .map(|c| Rgba([c[0], c[1], c[2], c[3]]))
+                .collect(),
+            png::ColorType::Rgb => buf[..info.buffer_size()]
+                .chunks(3)
+                .map(|c| Rgba([c[0], c[1], c[2], 255]))
+                .collect(),
+            other => panic!("unexpected decoded color type {other:?}"),
+        };
+        frames.push(DecodedFrame {
+            pixels,
+            delay: (fc.delay_num, fc.delay_den),
+            control: (
+                fc.x_offset,
+                fc.y_offset,
+                fc.width,
+                fc.height,
+                fc.dispose_op as u8,
+                fc.blend_op as u8,
+            ),
+        });
+    }
+    (frames, actl.num_plays)
+}
+
 /// Decodes a PNG to RGBA8 pixels with an independent decoder path.
 pub fn decode(png: &[u8]) -> (u32, u32, Vec<Rgba>) {
     let mut decoder = png::Decoder::new(Cursor::new(png));

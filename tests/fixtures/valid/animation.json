@@ -1,0 +1,94 @@
+{
+  "palettes": [
+    {
+      "id": "stage",
+      "colors": [
+        { "char": "k", "rgba": [20, 20, 30] },
+        { "char": "r", "rgba": [220, 40, 40] },
+        { "char": "y", "rgba": [250, 210, 60] },
+        { "char": "w", "rgba": [255, 255, 255, 0.5] },
+        { "char": "b", "rgba": [60, 90, 220] }
+      ]
+    }
+  ],
+  "sprites": [
+    { "id": "floor", "_palette": "stage", "lines": ["kkkkkkkk", "kkkkkkkk", "kkkkkkkk", "kkkkkkkk"] },
+    { "id": "hero", "_palette": "stage", "lines": ["r.", "rr"] },
+    { "id": "spark-a", "_palette": "stage", "lines": ["y"] },
+    { "id": "spark-b", "_palette": "stage", "lines": ["w"] },
+    { "id": "lamp-off", "_palette": "stage", "lines": ["bb", "bb"] },
+    { "id": "lamp-on", "_palette": "stage", "lines": ["yy", "yy"] }
+  ],
+  "flipbooks": [
+    {
+      "id": "sparkle",
+      "width": 1,
+      "height": 1,
+      "fps": 8,
+      "frames": [
+        { "_sprite": "spark-a", "coordinates": [0, 0], "duration": 1 },
+        { "_sprite": "spark-b", "coordinates": [0, 0], "duration": 1 },
+        { "_sprite": "spark-a", "coordinates": [0, 0], "duration": 2 }
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "dance-floor",
+      "width": 8,
+      "height": 4,
+      "elements": [
+        { "_sprite": "floor", "coordinates": [0, 0], "zIndex": -1 },
+        { "id": "hero", "_sprite": "hero", "coordinates": [0, 2] },
+        { "id": "spark", "_flipbook": "sparkle", "coordinates": [1, 2], "visible": false, "zIndex": 1 }
+      ]
+    },
+    {
+      "id": "lamp",
+      "width": 4,
+      "height": 4,
+      "elements": [
+        { "_sprite": "lamp-off", "coordinates": [1, 1] },
+        { "id": "light", "_sprite": "lamp-on", "coordinates": [1, 1], "visible": false }
+      ]
+    }
+  ],
+  "timelines": [
+    {
+      "id": "dance",
+      "description": "Every transition kind: the hero walks right and back, flips, and a sparkle follows.",
+      "_panel": "dance-floor",
+      "fps": 12,
+      "duration": 24,
+      "transitions": [
+        { "kind": "moveTo", "_element": "hero", "coordinates": [6, 2], "start": 0, "duration": 12 },
+        { "kind": "moveTo", "_element": "hero", "coordinates": [0, 2], "start": 12, "duration": 12 },
+        { "kind": "appendTransforms", "_element": "hero", "transforms": [{ "kind": "flip", "axis": "x" }], "at": 12 },
+        { "kind": "resetTransforms", "_element": "hero", "at": 23 },
+        { "kind": "setVisible", "_element": "spark", "value": true, "at": 6 },
+        { "kind": "moveToZ", "_element": "spark", "value": -1, "at": 18 },
+        { "kind": "seekFlipbook", "_element": "spark", "frameIndex": 1, "at": 9 }
+      ]
+    },
+    {
+      "id": "pulse",
+      "_panel": "lamp",
+      "fps": 10,
+      "duration": 10,
+      "transitions": [
+        { "kind": "setVisible", "_element": "light", "value": true, "at": 5 }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "show",
+      "width": 12,
+      "height": 4,
+      "layers": [
+        { "_timeline": "dance", "coordinates": [0, 0] },
+        { "_timeline": "pulse", "coordinates": [8, 0] }
+      ]
+    }
+  ]
+}

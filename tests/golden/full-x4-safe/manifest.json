@@ -3,10 +3,30 @@
   "scale": 4,
   "safeBuild": true,
   "files": {
+    "/flipbooks/spin": {
+      "path": "flipbooks/7da354dc6053cc97.png",
+      "width": 32,
+      "height": 32,
+      "frames": 4,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
     "/panels/stage": {
       "path": "panels/862b22a72d9a59b6.png",
       "width": 128,
       "height": 64
+    },
+    "/scenes/night": {
+      "path": "scenes/27bc2f75fc4732ab.png",
+      "width": 256,
+      "height": 128,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
     },
     "/sprites/block": {
       "path": "sprites/049a3c8654f8ca03.png",
@@ -22,6 +42,16 @@
       "path": "sprites/c721bd8d86188812.png",
       "width": 16,
       "height": 32
+    },
+    "/timelines/walk": {
+      "path": "timelines/2a341b653f774530.png",
+      "width": 128,
+      "height": 64,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
     }
   }
 }

@@ -9,7 +9,7 @@ use std::process::Command;
 
 use common::assert_error;
 use pixel_perfect::encode::{self, Encoding};
-use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions};
+use pixel_perfect::export::{self, OutputFormat, RenderOptions};
 use pixel_perfect::model::Rgba;
 use pixel_perfect::raster::TRANSPARENT;
 use pixel_perfect::{Format, ResolvedWorksheet, render};
@@ -177,29 +177,44 @@ fn compositions(exports: Option<Value>) -> ResolvedWorksheet {
 }
 
 #[test]
-fn implicit_exports_skip_unsupported_with_a_notice() {
+fn implicit_exports_include_animations() {
     let ws = compositions(None);
     let dir = tempfile::tempdir().unwrap();
-    let (plan, _) = export::render(&ws, &options(dir.path())).unwrap();
+    let (plan, manifest) = export::render(&ws, &options(dir.path())).unwrap();
     assert_eq!(
         files(dir.path()),
         [
+            "flipbooks/spin.png",
             "manifest.json",
+            "panels/moving.png",
             "panels/stage.png",
             "scenes/day.png",
+            "scenes/night.png",
             "sprites/a.png",
-            "sprites/g.png"
+            "sprites/g.png",
+            "timelines/walk.png",
         ]
     );
-    assert_eq!(
-        plan.notices,
-        [
-            "skipped 1 resource(s) in flipbooks: flipbooks are not supported yet",
-            "skipped 1 resource(s) in panels: animated panels are not supported yet",
-            "skipped 1 resource(s) in timelines: timelines are not supported yet",
-            "skipped 1 resource(s) in scenes: animated scenes are not supported yet",
-        ]
-    );
+    assert!(plan.notices.is_empty());
+    for (pointer, animated) in [
+        ("/sprites/a", false),
+        ("/panels/stage", false),
+        ("/scenes/day", false),
+        ("/flipbooks/spin", true),
+        ("/panels/moving", true),
+        ("/timelines/walk", true),
+        ("/scenes/night", true),
+    ] {
+        let path = dir.path().join(&manifest.files[pointer].path);
+        let bytes = std::fs::read(path).unwrap();
+        let has_actl = images::chunks(&bytes).iter().any(|c| c == "acTL");
+        assert_eq!(has_actl, animated, "{pointer}");
+        assert_eq!(
+            manifest.files[pointer].frames.is_some(),
+            animated,
+            "{pointer}"
+        );
+    }
 }
 
 #[test]
@@ -223,40 +238,132 @@ fn static_panel_and_scene_are_exported() {
 }
 
 #[test]
-fn unsupported_explicit_export_writes_nothing() {
+fn animated_resources_are_written_as_apng() {
     let ws = compositions(Some(json!([
-        "/sprites/a",
         "/flipbooks/spin",
-        "/panels/moving",
         "/timelines/walk",
         "/scenes/night"
     ])));
     let dir = tempfile::tempdir().unwrap();
-    let err = export::render(&ws, &options(dir.path())).unwrap_err();
-    let RenderError::Plan(diagnostics) = err else {
-        panic!("expected a plan error")
-    };
-    assert_error(
-        &diagnostics,
-        "/exports/1",
-        "flipbooks are not supported yet",
+    let (_, manifest) = export::render(&ws, &options(dir.path())).unwrap();
+    assert_eq!(
+        files(dir.path()),
+        [
+            "flipbooks/spin.png",
+            "manifest.json",
+            "scenes/night.png",
+            "timelines/walk.png"
+        ]
     );
-    assert_error(
-        &diagnostics,
-        "/exports/2",
-        "animated panels are not supported yet",
+    let size = |p: &str| (manifest.files[p].width, manifest.files[p].height);
+    assert_eq!(size("/flipbooks/spin"), (2, 1));
+    assert_eq!(size("/timelines/walk"), (3, 1));
+    assert_eq!(size("/scenes/night"), (4, 2));
+    // walk: `base` (red) under half green, then hidden at frame-unit 1.
+    let bytes = std::fs::read(dir.path().join("timelines/walk.png")).unwrap();
+    let (frames, plays) = images::decode_apng(&bytes);
+    assert_eq!(plays, 0);
+    let mixed = Rgba([127, 128, 0, 255]);
+    let red = Rgba([255, 0, 0, 255]);
+    let green = Rgba([0, 255, 0, 128]);
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0].pixels, [mixed, red, TRANSPARENT]);
+    assert_eq!(frames[1].pixels, [green, TRANSPARENT, TRANSPARENT]);
+    assert_eq!((frames[0].delay, frames[1].delay), ((1, 1), (1, 1)));
+}
+
+#[test]
+fn animated_entry_in_the_manifest() {
+    let sprites: Vec<Value> = ["a", "b", "c", "d"]
+        .iter()
+        .map(|c| json!({ "id": c, "_palette": "p", "lines": vec![c.repeat(8); 8] }))
+        .collect();
+    let doc = json!({
+        "palettes": [{ "id": "p", "colors": [
+            { "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] },
+            { "char": "c", "rgba": [3, 0, 0] }, { "char": "d", "rgba": [4, 0, 0] }
+        ] }],
+        "sprites": sprites,
+        "flipbooks": [{ "id": "spin", "width": 8, "height": 8, "fps": 12, "frames": [
+            { "_sprite": "a", "coordinates": [0, 0], "duration": 2 },
+            { "_sprite": "b", "coordinates": [0, 0], "duration": 2 },
+            { "_sprite": "c", "coordinates": [0, 0], "duration": 1 },
+            { "_sprite": "d", "coordinates": [0, 0], "duration": 1 }
+        ] }],
+        "exports": ["/flipbooks/spin"]
+    });
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&ws, &options(dir.path())).unwrap();
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest["files"]["/flipbooks/spin"],
+        json!({ "path": "flipbooks/spin.png", "width": 8, "height": 8, "frames": 4, "loop": { "num": 1, "den": 2 } })
     );
-    assert_error(
-        &diagnostics,
-        "/exports/3",
-        "timelines are not supported yet",
-    );
-    assert_error(
-        &diagnostics,
-        "/exports/4",
-        "animated scenes are not supported yet",
-    );
-    assert_eq!(diagnostics.len(), 4);
+}
+
+#[test]
+fn rendered_apng_round_trip_with_scale() {
+    let ws = compositions(Some(json!(["/scenes/night"])));
+    let dir = tempfile::tempdir().unwrap();
+    let mut opts = options(dir.path());
+    opts.scale = 3;
+    export::render(&ws, &opts).unwrap();
+    let bytes = std::fs::read(dir.path().join("scenes/night.png")).unwrap();
+    let (decoded, _) = images::decode_apng(&bytes);
+    let animation = pixel_perfect::animate::Animation::new(&ws, "scenes", "night").unwrap();
+    let expected = animation.frames();
+    assert_eq!(decoded.len(), expected.len());
+    for (frame, (image, ticks)) in decoded.iter().zip(&expected) {
+        assert_eq!(frame.pixels, image.upscale(3).pixels());
+        let (num, den) = pixel_perfect::time::reduced(*ticks, animation.clock);
+        assert_eq!(frame.delay, (num as u16, den as u16));
+    }
+}
+
+#[test]
+fn repeated_render_is_byte_identical() {
+    let ws = compositions(None);
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    export::render(&ws, &options(a.path())).unwrap();
+    export::render(&ws, &options(b.path())).unwrap();
+    for file in files(a.path()) {
+        assert_eq!(
+            std::fs::read(a.path().join(&file)).unwrap(),
+            std::fs::read(b.path().join(&file)).unwrap(),
+            "{file}"
+        );
+    }
+}
+
+#[test]
+fn delay_denominator_too_large_is_a_plan_error() {
+    let doc = json!({
+        "palettes": [{ "id": "p", "colors": [{ "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] }] }],
+        "sprites": [{ "id": "a", "_palette": "p", "lines": ["a"] }, { "id": "b", "_palette": "p", "lines": ["b"] }],
+        "flipbooks": [
+            { "id": "f89", "width": 1, "height": 1, "fps": 89, "frames": [
+                { "_sprite": "a", "coordinates": [0, 0], "duration": 1 }, { "_sprite": "b", "coordinates": [0, 0], "duration": 1 }] },
+            { "id": "f83", "width": 1, "height": 1, "fps": 83, "frames": [
+                { "_sprite": "a", "coordinates": [0, 0], "duration": 1 }, { "_sprite": "b", "coordinates": [0, 0], "duration": 1 }] }
+        ],
+        "panels": [
+            { "id": "t", "width": 1, "height": 1, "elements": [{ "id": "e", "_flipbook": "f89", "coordinates": [0, 0] }] },
+            { "id": "p", "width": 1, "height": 1, "elements": [{ "_flipbook": "f83", "coordinates": [0, 0] }] }
+        ],
+        "timelines": [{ "id": "tl", "_panel": "t", "fps": 97, "duration": 97,
+            "transitions": [{ "kind": "seekFlipbook", "_element": "e", "at": 1 }] }],
+        "scenes": [{ "id": "s", "width": 1, "height": 1, "layers": [
+            { "_timeline": "tl", "coordinates": [0, 0] }, { "_panel": "p", "coordinates": [0, 0] }
+        ] }],
+        "exports": ["/scenes/s"]
+    });
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    let errors = plan_errors(&ws, &options(dir.path()));
+    assert_error(&errors, "/scenes/0", "combining the rates 83, 89, 97 fps");
     assert!(files(dir.path()).is_empty());
 }
 

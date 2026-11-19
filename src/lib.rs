@@ -10,6 +10,7 @@
 //! [`encode`] turns final images into PNG, and [`export`] plans file names,
 //! writes the files and the manifest.
 
+pub mod animate;
 pub mod compose;
 pub mod encode;
 pub mod error;
@@ -21,6 +22,7 @@ pub mod render;
 pub mod resolve;
 pub mod schema;
 pub mod semantic;
+pub mod time;
 
 use std::path::Path;
 

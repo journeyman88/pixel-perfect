@@ -1,5 +1,5 @@
-//! Golden files: rendering fixtures with `exports` removed (so every supported
-//! resource is exported) must reproduce the committed files byte for byte.
+//! Golden files: rendering fixtures with `exports` removed (so every resource
+//! is exported) must reproduce the committed files byte for byte.
 //!
 //! Regenerate after an intended change with:
 //! `UPDATE_GOLDEN=1 cargo test --test golden`
@@ -69,17 +69,24 @@ fn check(name: &str, fixture: &str, scale: u32, safe_build: bool, expected_files
 
 #[test]
 fn full_fixture() {
-    // manifest + 3 sprites + the static panel `stage`
-    check("full", "valid/full.json", 1, false, 5);
+    // manifest + 3 sprites + panel `stage` + flipbook `spin` + timeline `walk`
+    // + animated scene `night`
+    check("full", "valid/full.json", 1, false, 8);
 }
 
 #[test]
 fn full_fixture_scaled_safe_build() {
-    check("full-x4-safe", "valid/full.json", 4, true, 5);
+    check("full-x4-safe", "valid/full.json", 4, true, 8);
 }
 
 #[test]
 fn scene_fixture() {
     // manifest + 5 sprites + 2 panels + 1 scene
     check("scene", "valid/scene.json", 1, false, 9);
+}
+
+#[test]
+fn animation_fixture() {
+    // manifest + 6 sprites + flipbook + 2 static panels + 2 timelines + scene
+    check("animation", "valid/animation.json", 1, false, 13);
 }

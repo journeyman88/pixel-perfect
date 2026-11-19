@@ -3,10 +3,30 @@
   "scale": 1,
   "safeBuild": false,
   "files": {
+    "/flipbooks/spin": {
+      "path": "flipbooks/spin.png",
+      "width": 8,
+      "height": 8,
+      "frames": 4,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
     "/panels/stage": {
       "path": "panels/stage.png",
       "width": 32,
       "height": 16
+    },
+    "/scenes/night": {
+      "path": "scenes/night.png",
+      "width": 64,
+      "height": 32,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
     },
     "/sprites/block": {
       "path": "sprites/block.png",
@@ -22,6 +42,16 @@
       "path": "sprites/block-night.png",
       "width": 4,
       "height": 8
+    },
+    "/timelines/walk": {
+      "path": "timelines/walk.png",
+      "width": 32,
+      "height": 16,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
     }
   }
 }
