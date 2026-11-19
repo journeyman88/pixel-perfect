@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Typed worksheet model, deserialized from schema-valid data.
 //!
 //! Field names follow the schema exactly; `_*` reference fields are renamed to

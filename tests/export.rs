@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Sprite rasterization, export selection, planning, safe build and manifest.
 
 mod common;

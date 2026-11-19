@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Schema validation (tasks 3.3-3.5).
 
 mod common;

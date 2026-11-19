@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Time model and animation evaluation: scenarios of the animation spec, plus
 //! the composition scenarios about animated frames.
 

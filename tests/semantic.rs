@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Semantic validation: one test per scenario of the worksheet-loading spec (task 5.8).
 
 mod common;

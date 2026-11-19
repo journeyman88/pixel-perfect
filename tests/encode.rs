@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! PNG encoding: color count, palette order, chunks, round trip, determinism.
 
 #[path = "common/images.rs"]

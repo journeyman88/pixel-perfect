@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Letter-coded images and PNG inspection helpers.
 #![allow(dead_code)]
 

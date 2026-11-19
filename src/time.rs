@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Exact time arithmetic for animations: clocks, loop lengths, change ticks and
 //! APNG delays. Everything is integer; a tick is `1 / F` seconds for the clock
 //! `F` of the resource being rendered.

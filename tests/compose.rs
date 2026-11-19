@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Compositing, panels and scenes: scenarios of the composition spec.
 
 mod common;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Reading JSON, YAML and TOML worksheets into the JSON data model.
 
 use std::path::Path;

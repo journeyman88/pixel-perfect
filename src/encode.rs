@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Deterministic PNG and APNG encoding, indexed or RGBA depending on the
 //! color count.
 

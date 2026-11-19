@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Rasterization of resolved resources into images.
 
 use crate::raster::{Image, TRANSPARENT};

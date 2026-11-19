@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Animation evaluation: flipbook playback, timeline state, the change ticks of
 //! an animated resource and its sequence of merged frames.
 //!

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Image buffer and transforms: scenarios of the sprite-rendering spec.
 
 #[path = "common/images.rs"]

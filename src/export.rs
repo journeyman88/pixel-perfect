@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Export planning, file naming, writing and the manifest.
 //!
 //! Rendering runs in two phases: [`plan`] decides every output and collects

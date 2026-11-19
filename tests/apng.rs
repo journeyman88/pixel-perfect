@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! APNG encoding: scenarios of the apng-export spec that concern the encoder.
 
 #[path = "common/images.rs"]

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Golden files: rendering fixtures with `exports` removed (so every resource
 //! is exported) must reproduce the committed files byte for byte.
 //!

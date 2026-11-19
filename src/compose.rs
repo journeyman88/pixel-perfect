@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Compositing: the source-over rule, drawing with clipping, and rendering of
 //! static panels and scenes.
 

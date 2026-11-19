@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Semantic validation: the rules the schema marks as `$comment: "Engine: ..."`.
 
 use std::collections::{BTreeMap, HashMap};

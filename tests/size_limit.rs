@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! `--max-image-size`: parsing and the plan-time size walk. No test allocates
 //! a large image: the plan fails before rendering.
 

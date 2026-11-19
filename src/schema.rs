@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! The embedded worksheet JSON Schema and structural validation.
 
 use std::sync::OnceLock;

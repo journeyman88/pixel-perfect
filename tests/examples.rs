@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! The worksheets in `examples/` stay valid and render with the encodings
 //! their comments promise.
 

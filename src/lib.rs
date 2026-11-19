@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! pixel-perfect: renders lossless pixel art from declarative worksheets.
 //!
 //! Loading pipeline: [`input`] parses JSON/YAML/TOML into a JSON value,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! Resolution of palette and sprite inheritance.
 //!
 //! Resolution reports cycles and the per-resource rules that only make sense

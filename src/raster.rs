@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The pixel-perfect Authors
+
 //! RGBA images and the transform operations.
 
 use crate::model::{Axis, Rgba, Rotation, Transform};
