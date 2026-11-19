@@ -15,6 +15,7 @@ use serde::Deserialize;
 pub struct Worksheet {
     #[serde(rename = "$schema")]
     pub schema: Option<String>,
+    pub description: Option<String>,
     #[serde(default)]
     pub palettes: Vec<Palette>,
     #[serde(default)]
@@ -44,6 +45,7 @@ pub struct Palette {
 pub struct Color {
     pub char: char,
     pub rgba: Rgba,
+    pub description: Option<String>,
 }
 
 /// An 8-bit RGBA color. Alpha is authored as 0.0-1.0 and converted with
@@ -170,6 +172,7 @@ pub struct Flipbook {
 pub struct Frame {
     #[serde(rename = "_sprite")]
     pub sprite: String,
+    pub description: Option<String>,
     pub coordinates: [i64; 2],
     #[serde(default)]
     pub transforms: Vec<Transform>,
@@ -323,6 +326,7 @@ pub struct Layer {
     pub panel: Option<String>,
     #[serde(rename = "_timeline")]
     pub timeline: Option<String>,
+    pub description: Option<String>,
     pub coordinates: [i64; 2],
     #[serde(default)]
     pub z_index: i64,

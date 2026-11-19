@@ -21,6 +21,24 @@ pub fn full() -> Value {
     serde_json::from_str(&text).unwrap()
 }
 
+/// The `valid/descriptions.yaml` fixture as a JSON value, ready to be mutated.
+pub fn descriptions() -> Value {
+    let text = std::fs::read_to_string(fixture("valid/descriptions.yaml")).unwrap();
+    pixel_perfect::input::parse(&text, pixel_perfect::Format::Yaml).unwrap()
+}
+
+/// Removes every `description` property, at any depth.
+pub fn strip_descriptions(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("description");
+            map.values_mut().for_each(strip_descriptions);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_descriptions),
+        _ => {}
+    }
+}
+
 /// Sets the value at `pointer`, creating the last segment if needed
 /// (an object key, or the next index of an array).
 pub fn set(doc: &mut Value, pointer: &str, value: Value) {

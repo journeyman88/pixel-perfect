@@ -1,0 +1,92 @@
+# Every object that accepts a `description` carries one: the root, palettes,
+# colors, sprites, transforms (every kind), flipbooks, frames, panels,
+# elements, timelines, transitions (every kind), scenes and layers.
+# tests/export.rs renders it with and without descriptions and expects
+# identical output.
+description: Every annotatable object, annotated.
+palettes:
+  - id: base
+    description: Opaque red and green, half-transparent white.
+    colors:
+      - { char: r, rgba: [255, 0, 0], description: Red. }
+      - { char: g, rgba: [0, 255, 0], description: Green. }
+      - { char: w, rgba: [255, 255, 255, 0.5], description: Half-transparent white. }
+  - id: night
+    _palette: base
+    description: Darker red, added blue.
+    colors:
+      - { char: r, rgba: [80, 0, 0], description: Dark red. }
+      - { char: b, rgba: [0, 0, 255], description: Blue. }
+sprites:
+  - id: block
+    _palette: base
+    description: A 4x8 test block.
+    width: 4
+    height: 8
+    lines: [rrgg, rrgg, wwww, wwww, "....", "....", gggg, rrrr]
+  - id: block-night
+    _sprite: block
+    _palette: night
+    description: The block at night.
+    overrideLines: { "0": "==b=" }
+flipbooks:
+  - id: spin
+    description: The block turning.
+    width: 8
+    height: 8
+    fps: 12
+    frames:
+      - { _sprite: block, coordinates: [0, 0], duration: 2, description: Upright. }
+      - _sprite: block
+        coordinates: [0, 0]
+        duration: 2
+        description: Lying down.
+        transforms:
+          - { kind: rotate, degrees: 90, description: Quarter turn. }
+          - { kind: crop, area: [0, 0, 8, 4], description: Top half. }
+      - _sprite: block-night
+        coordinates: [-2, 3]
+        duration: 1
+        description: Upside down.
+        transforms:
+          - { kind: flip, axis: x, description: Mirror left-right. }
+          - { kind: scale, width: 8, height: 16, description: Double size. }
+panels:
+  - id: stage
+    description: The block and the spinner side by side.
+    width: 32
+    height: 16
+    elements:
+      - { id: hero, _sprite: block, coordinates: [0, 0], zIndex: 2, description: The hero. }
+      - { id: spinner, _flipbook: spin, coordinates: [20, 0], visible: false, description: The spinner. }
+      - _sprite: block-night
+        coordinates: [10, 2]
+        description: A tiled floor.
+        transforms:
+          - { kind: tile, width: 6, height: 10, description: Repeat the block. }
+timelines:
+  - id: walk
+    _panel: stage
+    description: The hero walks while the spinner appears.
+    fps: 10
+    duration: 40
+    transitions:
+      - { kind: moveTo, _element: hero, coordinates: [28, 8], start: 0, duration: 30, description: Walk. }
+      - { kind: setVisible, _element: spinner, value: true, at: 10, description: Show the spinner. }
+      - { kind: moveToZ, _element: spinner, value: 5, at: 12, description: Bring it forward. }
+      - kind: appendTransforms
+        _element: hero
+        at: 20
+        description: Turn around.
+        transforms:
+          - { kind: flip, axis: x, description: Face left. }
+      - { kind: resetTransforms, _element: hero, at: 35, description: Face right again. }
+      - { kind: seekFlipbook, _element: spinner, frameIndex: 2, at: 15, description: Skip ahead. }
+scenes:
+  - id: night
+    description: The stage over its own animation.
+    width: 64
+    height: 32
+    layers:
+      - { _panel: stage, coordinates: [0, 0], description: Still stage. }
+      - { _timeline: walk, coordinates: [16, 16], zIndex: -1, description: Animated stage. }

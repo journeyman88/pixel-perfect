@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{assert_error_within, errors, full, load, remove, set};
+use common::{assert_error_within, descriptions, errors, full, load, remove, set};
 use serde_json::json;
 
 #[test]
@@ -178,5 +178,44 @@ fn invalid_transitions() {
             "{case} was not rejected at {pointer}:\n{}",
             common::render(&diagnostics)
         );
+    }
+}
+
+/// One `description` per site added by `add-descriptions-to-format`, as
+/// pointers into `valid/descriptions.yaml`.
+const NEW_DESCRIPTION_SITES: [&str; 6] = [
+    "/description",
+    "/palettes/0/colors/0/description",
+    "/flipbooks/0/frames/1/transforms/0/description",
+    "/flipbooks/0/frames/0/description",
+    "/timelines/0/transitions/0/description",
+    "/scenes/0/layers/0/description",
+];
+
+#[test]
+fn descriptions_are_accepted_everywhere() {
+    // Schema and semantic validation both pass.
+    load(descriptions());
+}
+
+#[test]
+fn every_new_site_is_present_in_the_fixture() {
+    let doc = descriptions();
+    for pointer in NEW_DESCRIPTION_SITES {
+        assert!(
+            doc.pointer(pointer).is_some_and(|v| v.is_string()),
+            "{pointer}"
+        );
+    }
+}
+
+#[test]
+fn empty_or_non_string_description_is_rejected() {
+    for pointer in NEW_DESCRIPTION_SITES {
+        for bad in [json!(""), json!(42)] {
+            let mut doc = descriptions();
+            set(&mut doc, pointer, bad.clone());
+            assert_error_within(&errors(doc), pointer);
+        }
     }
 }

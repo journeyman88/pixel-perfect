@@ -674,3 +674,45 @@ fn yaml_worksheets_render_too() {
     export::render(&ws, &options(dir.path())).unwrap();
     assert!(dir.path().join("sprites/s.png").exists());
 }
+
+/// Every file under `dir`, by relative path, with its bytes.
+fn contents(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    files(dir)
+        .into_iter()
+        .map(|f| {
+            let bytes = std::fs::read(dir.join(&f)).unwrap();
+            (f, bytes)
+        })
+        .collect()
+}
+
+#[test]
+fn descriptions_do_not_change_the_output() {
+    let annotated = pixel_perfect::load_value(common::descriptions()).unwrap();
+    let mut doc = common::descriptions();
+    common::strip_descriptions(&mut doc);
+    let stripped = pixel_perfect::load_value(doc).unwrap();
+
+    for safe_build in [false, true] {
+        let with = tempfile::tempdir().unwrap();
+        let without = tempfile::tempdir().unwrap();
+        for (ws, dir) in [(&annotated, &with), (&stripped, &without)] {
+            let opts = RenderOptions {
+                safe_build,
+                ..options(dir.path())
+            };
+            export::render(ws, &opts).unwrap();
+        }
+        let written = contents(with.path());
+        assert!(
+            written.iter().any(|(f, _)| f == "manifest.json"),
+            "{:?}",
+            files(with.path())
+        );
+        assert!(written.len() > 1, "only the manifest was written");
+        assert!(
+            written == contents(without.path()),
+            "output differs (safe_build: {safe_build})"
+        );
+    }
+}

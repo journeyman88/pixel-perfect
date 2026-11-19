@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{fixture, full, load};
+use common::{descriptions, fixture, full, load, strip_descriptions};
 use pixel_perfect::model::{Rgba, Transform, Transition};
 
 #[test]
@@ -105,4 +105,59 @@ fn transforms_and_transitions_deserialize() {
     assert!(!spinner.visible);
     assert_eq!(ws.model.panels[0].elements[0].z_index, 2);
     assert_eq!(ws.model.panels[0].elements[2].z_index, 0, "default zIndex");
+}
+
+#[test]
+fn descriptions_are_kept_in_the_model() {
+    let ws = load(descriptions()).model;
+    assert_eq!(
+        ws.description.as_deref(),
+        Some("Every annotatable object, annotated.")
+    );
+    assert_eq!(
+        ws.palettes[0].colors[0].description.as_deref(),
+        Some("Red.")
+    );
+    assert_eq!(
+        ws.flipbooks[0].frames[0].description.as_deref(),
+        Some("Upright.")
+    );
+    assert_eq!(
+        ws.scenes[0].layers[0].description.as_deref(),
+        Some("Still stage.")
+    );
+}
+
+#[test]
+fn transform_and_transition_descriptions_are_ignored() {
+    // `Transform` and `Transition` have no `description` field: the annotated
+    // and the stripped document must deserialize to the same values.
+    let annotated = load(descriptions()).model;
+    let mut doc = descriptions();
+    strip_descriptions(&mut doc);
+    let stripped = load(doc).model;
+
+    let transforms = |ws: &pixel_perfect::model::Worksheet| -> Vec<Vec<Transform>> {
+        let frames = ws
+            .flipbooks
+            .iter()
+            .flat_map(|f| &f.frames)
+            .map(|f| f.transforms.clone());
+        let elements = ws
+            .panels
+            .iter()
+            .flat_map(|p| &p.elements)
+            .map(|e| e.transforms.clone());
+        frames.chain(elements).collect()
+    };
+    let transitions = |ws: &pixel_perfect::model::Worksheet| -> Vec<Transition> {
+        ws.timelines
+            .iter()
+            .flat_map(|t| t.transitions.clone())
+            .collect()
+    };
+    assert!(transforms(&annotated).iter().any(|t| !t.is_empty()));
+    assert_eq!(transforms(&annotated), transforms(&stripped));
+    assert_eq!(transitions(&annotated).len(), 6);
+    assert_eq!(transitions(&annotated), transitions(&stripped));
 }
