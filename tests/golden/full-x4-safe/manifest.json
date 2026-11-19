@@ -1,0 +1,22 @@
+{
+  "format": "png",
+  "scale": 4,
+  "safeBuild": true,
+  "files": {
+    "/sprites/block": {
+      "path": "sprites/049a3c8654f8ca03.png",
+      "width": 16,
+      "height": 32
+    },
+    "/sprites/block-deep": {
+      "path": "sprites/9840fcd43a47d9b8.png",
+      "width": 16,
+      "height": 32
+    },
+    "/sprites/block-night": {
+      "path": "sprites/c721bd8d86188812.png",
+      "width": 16,
+      "height": 32
+    }
+  }
+}

@@ -1,0 +1,34 @@
+[package]
+name = "pixel-perfect"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Renders lossless pixel art (PNG, APNG, WebP) from declarative worksheets"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["pixel-art", "png", "apng", "sprite", "json-schema"]
+categories = ["graphics", "command-line-utilities"]
+include = ["src/**", "schema/**", "README.md", "LICENSE"]
+
+[lib]
+name = "pixel_perfect"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pixel-perfect"
+path = "src/main.rs"
+
+[dependencies]
+blake2 = "0.11"
+clap = { version = "4.6", features = ["derive"] }
+jsonschema = { version = "0.61", default-features = false }
+png = "0.18"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_norway = "0.9"
+thiserror = "2"
+toml = "1.2"
+
+[dev-dependencies]
+assert_cmd = "2.2"
+tempfile = "3.27.0"

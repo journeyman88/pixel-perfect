@@ -1,0 +1,9 @@
+# A sprite referring to a palette that does not exist.
+[[palettes]]
+id = "p"
+colors = [{ char = "r", rgba = [255, 0, 0] }]
+
+[[sprites]]
+id = "s"
+_palette = "missing"
+lines = ["r"]

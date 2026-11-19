@@ -1,0 +1,457 @@
+# Sprites only: one sprite per PNG encoding the engine can choose.
+#
+#   pixel-perfect render examples/sprites.yaml -o out --scale 8
+#
+# The encoding depends only on the number of distinct colors in the final image
+# (fully transparent pixels count as one color):
+#
+#   sprite      colors  file
+#   coin             2  indexed, 1 bit per pixel
+#   heart            3  indexed, 2 bits (with a semi-transparent highlight)
+#   slime            8  indexed, 4 bits (with a semi-transparent shadow)
+#   slime-ice        8  indexed, 4 bits (same lines, derived palette)
+#   sunset          27  indexed, 8 bits
+#   spectrum       288  RGBA, 8 bits per channel (more than 256 colors)
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  - id: gold
+    colors:
+      - { char: g, rgba: [240, 190, 40] }
+
+  - id: warm
+    colors:
+      - { char: r, rgba: [220, 40, 60] }
+      - { char: h, rgba: [255, 255, 255, 0.6] }
+
+  - id: slime
+    colors:
+      - { char: o, rgba: [20, 70, 30] }        # outline
+      - { char: L, rgba: [150, 230, 120] }     # light
+      - { char: M, rgba: [80, 180, 70] }       # body
+      - { char: D, rgba: [50, 130, 50] }       # dark side
+      - { char: w, rgba: [255, 255, 255] }     # eye
+      - { char: k, rgba: [10, 10, 20] }        # pupil
+      - { char: s, rgba: [0, 0, 0, 0.35] }     # shadow on the ground
+
+  # Same characters, different colors: the derived palette replaces only
+  # the body colors and keeps eyes and shadow.
+  - id: ice
+    _palette: slime
+    colors:
+      - { char: o, rgba: [20, 50, 90] }
+      - { char: L, rgba: [200, 240, 255] }
+      - { char: M, rgba: [120, 190, 240] }
+      - { char: D, rgba: [70, 130, 200] }
+
+  - id: sunset
+    colors:
+      - { char: A, rgba: [40, 20, 80] }      # sky
+      - { char: B, rgba: [53, 28, 79] }
+      - { char: C, rgba: [67, 36, 78] }
+      - { char: D, rgba: [80, 44, 76] }
+      - { char: E, rgba: [94, 52, 75] }
+      - { char: F, rgba: [107, 61, 74] }
+      - { char: G, rgba: [121, 69, 72] }
+      - { char: H, rgba: [134, 77, 71] }
+      - { char: I, rgba: [148, 85, 70] }
+      - { char: J, rgba: [161, 93, 69] }
+      - { char: K, rgba: [174, 101, 68] }
+      - { char: L, rgba: [188, 109, 66] }
+      - { char: M, rgba: [201, 118, 65] }
+      - { char: N, rgba: [215, 126, 64] }
+      - { char: O, rgba: [228, 134, 62] }
+      - { char: P, rgba: [242, 142, 61] }
+      - { char: Q, rgba: [255, 150, 60] }
+      - { char: R, rgba: [90, 50, 100] }      # sea
+      - { char: S, rgba: [78, 43, 90] }
+      - { char: T, rgba: [67, 37, 80] }
+      - { char: U, rgba: [55, 30, 70] }
+      - { char: V, rgba: [43, 23, 60] }
+      - { char: W, rgba: [32, 17, 50] }
+      - { char: X, rgba: [20, 10, 40] }
+      - { char: "*", rgba: [255, 240, 170] }    # sun
+      - { char: +, rgba: [255, 200, 90] }     # sun rim
+      - { char: "~", rgba: [255, 210, 120] }    # reflection
+
+  # Generated: hue changes along x, lightness along y.
+  - id: spectrum
+    colors:
+      - { char: Ā, rgba: [39, 2, 2] }
+      - { char: ā, rgba: [39, 16, 2] }
+      - { char: Ă, rgba: [39, 30, 2] }
+      - { char: ă, rgba: [34, 39, 2] }
+      - { char: Ą, rgba: [20, 39, 2] }
+      - { char: ą, rgba: [7, 39, 2] }
+      - { char: Ć, rgba: [2, 39, 11] }
+      - { char: ć, rgba: [2, 39, 25] }
+      - { char: Ĉ, rgba: [2, 39, 39] }
+      - { char: ĉ, rgba: [2, 25, 39] }
+      - { char: Ċ, rgba: [2, 11, 39] }
+      - { char: ċ, rgba: [7, 2, 39] }
+      - { char: Č, rgba: [20, 2, 39] }
+      - { char: č, rgba: [34, 2, 39] }
+      - { char: Ď, rgba: [39, 2, 30] }
+      - { char: ď, rgba: [39, 2, 16] }
+      - { char: Đ, rgba: [63, 3, 3] }
+      - { char: đ, rgba: [63, 26, 3] }
+      - { char: Ē, rgba: [63, 48, 3] }
+      - { char: ē, rgba: [55, 63, 3] }
+      - { char: Ĕ, rgba: [33, 63, 3] }
+      - { char: ĕ, rgba: [11, 63, 3] }
+      - { char: Ė, rgba: [3, 63, 18] }
+      - { char: ė, rgba: [3, 63, 40] }
+      - { char: Ę, rgba: [3, 63, 63] }
+      - { char: ę, rgba: [3, 40, 63] }
+      - { char: Ě, rgba: [3, 18, 63] }
+      - { char: ě, rgba: [11, 3, 63] }
+      - { char: Ĝ, rgba: [33, 3, 63] }
+      - { char: ĝ, rgba: [55, 3, 63] }
+      - { char: Ğ, rgba: [63, 3, 48] }
+      - { char: ğ, rgba: [63, 3, 26] }
+      - { char: Ġ, rgba: [87, 5, 5] }
+      - { char: ġ, rgba: [87, 35, 5] }
+      - { char: Ģ, rgba: [87, 66, 5] }
+      - { char: ģ, rgba: [76, 87, 5] }
+      - { char: Ĥ, rgba: [46, 87, 5] }
+      - { char: ĥ, rgba: [15, 87, 5] }
+      - { char: Ħ, rgba: [5, 87, 25] }
+      - { char: ħ, rgba: [5, 87, 56] }
+      - { char: Ĩ, rgba: [5, 87, 87] }
+      - { char: ĩ, rgba: [5, 56, 87] }
+      - { char: Ī, rgba: [5, 25, 87] }
+      - { char: ī, rgba: [15, 5, 87] }
+      - { char: Ĭ, rgba: [46, 5, 87] }
+      - { char: ĭ, rgba: [76, 5, 87] }
+      - { char: Į, rgba: [87, 5, 66] }
+      - { char: į, rgba: [87, 5, 35] }
+      - { char: İ, rgba: [111, 6, 6] }
+      - { char: ı, rgba: [111, 45, 6] }
+      - { char: Ĳ, rgba: [111, 84, 6] }
+      - { char: ĳ, rgba: [97, 111, 6] }
+      - { char: Ĵ, rgba: [58, 111, 6] }
+      - { char: ĵ, rgba: [19, 111, 6] }
+      - { char: Ķ, rgba: [6, 111, 32] }
+      - { char: ķ, rgba: [6, 111, 71] }
+      - { char: ĸ, rgba: [6, 111, 111] }
+      - { char: Ĺ, rgba: [6, 71, 111] }
+      - { char: ĺ, rgba: [6, 32, 111] }
+      - { char: Ļ, rgba: [19, 6, 111] }
+      - { char: ļ, rgba: [58, 6, 111] }
+      - { char: Ľ, rgba: [97, 6, 111] }
+      - { char: ľ, rgba: [111, 6, 84] }
+      - { char: Ŀ, rgba: [111, 6, 45] }
+      - { char: ŀ, rgba: [135, 7, 7] }
+      - { char: Ł, rgba: [135, 55, 7] }
+      - { char: ł, rgba: [135, 103, 7] }
+      - { char: Ń, rgba: [119, 135, 7] }
+      - { char: ń, rgba: [71, 135, 7] }
+      - { char: Ņ, rgba: [23, 135, 7] }
+      - { char: ņ, rgba: [7, 135, 39] }
+      - { char: Ň, rgba: [7, 135, 87] }
+      - { char: ň, rgba: [7, 135, 135] }
+      - { char: ŉ, rgba: [7, 87, 135] }
+      - { char: Ŋ, rgba: [7, 39, 135] }
+      - { char: ŋ, rgba: [23, 7, 135] }
+      - { char: Ō, rgba: [71, 7, 135] }
+      - { char: ō, rgba: [119, 7, 135] }
+      - { char: Ŏ, rgba: [135, 7, 103] }
+      - { char: ŏ, rgba: [135, 7, 55] }
+      - { char: Ő, rgba: [158, 8, 8] }
+      - { char: ő, rgba: [158, 65, 8] }
+      - { char: Œ, rgba: [158, 121, 8] }
+      - { char: œ, rgba: [140, 158, 8] }
+      - { char: Ŕ, rgba: [83, 158, 8] }
+      - { char: ŕ, rgba: [27, 158, 8] }
+      - { char: Ŗ, rgba: [8, 158, 46] }
+      - { char: ŗ, rgba: [8, 158, 102] }
+      - { char: Ř, rgba: [8, 158, 158] }
+      - { char: ř, rgba: [8, 102, 158] }
+      - { char: Ś, rgba: [8, 46, 158] }
+      - { char: ś, rgba: [27, 8, 158] }
+      - { char: Ŝ, rgba: [83, 8, 158] }
+      - { char: ŝ, rgba: [140, 8, 158] }
+      - { char: Ş, rgba: [158, 8, 121] }
+      - { char: ş, rgba: [158, 8, 65] }
+      - { char: Š, rgba: [182, 10, 10] }
+      - { char: š, rgba: [182, 74, 10] }
+      - { char: Ţ, rgba: [182, 139, 10] }
+      - { char: ţ, rgba: [161, 182, 10] }
+      - { char: Ť, rgba: [96, 182, 10] }
+      - { char: ť, rgba: [31, 182, 10] }
+      - { char: Ŧ, rgba: [10, 182, 53] }
+      - { char: ŧ, rgba: [10, 182, 118] }
+      - { char: Ũ, rgba: [10, 182, 182] }
+      - { char: ũ, rgba: [10, 118, 182] }
+      - { char: Ū, rgba: [10, 53, 182] }
+      - { char: ū, rgba: [31, 10, 182] }
+      - { char: Ŭ, rgba: [96, 10, 182] }
+      - { char: ŭ, rgba: [161, 10, 182] }
+      - { char: Ů, rgba: [182, 10, 139] }
+      - { char: ů, rgba: [182, 10, 74] }
+      - { char: Ű, rgba: [206, 11, 11] }
+      - { char: ű, rgba: [206, 84, 11] }
+      - { char: Ų, rgba: [206, 157, 11] }
+      - { char: ų, rgba: [182, 206, 11] }
+      - { char: Ŵ, rgba: [109, 206, 11] }
+      - { char: ŵ, rgba: [35, 206, 11] }
+      - { char: Ŷ, rgba: [11, 206, 60] }
+      - { char: ŷ, rgba: [11, 206, 133] }
+      - { char: Ÿ, rgba: [11, 206, 206] }
+      - { char: Ź, rgba: [11, 133, 206] }
+      - { char: ź, rgba: [11, 60, 206] }
+      - { char: Ż, rgba: [35, 11, 206] }
+      - { char: ż, rgba: [109, 11, 206] }
+      - { char: Ž, rgba: [182, 11, 206] }
+      - { char: ž, rgba: [206, 11, 157] }
+      - { char: ſ, rgba: [206, 11, 84] }
+      - { char: ƀ, rgba: [230, 12, 12] }
+      - { char: Ɓ, rgba: [230, 94, 12] }
+      - { char: Ƃ, rgba: [230, 176, 12] }
+      - { char: ƃ, rgba: [203, 230, 12] }
+      - { char: Ƅ, rgba: [121, 230, 12] }
+      - { char: ƅ, rgba: [39, 230, 12] }
+      - { char: Ɔ, rgba: [12, 230, 67] }
+      - { char: Ƈ, rgba: [12, 230, 148] }
+      - { char: ƈ, rgba: [12, 230, 230] }
+      - { char: Ɖ, rgba: [12, 148, 230] }
+      - { char: Ɗ, rgba: [12, 67, 230] }
+      - { char: Ƌ, rgba: [39, 12, 230] }
+      - { char: ƌ, rgba: [121, 12, 230] }
+      - { char: ƍ, rgba: [203, 12, 230] }
+      - { char: Ǝ, rgba: [230, 12, 176] }
+      - { char: Ə, rgba: [230, 12, 94] }
+      - { char: Ɛ, rgba: [243, 25, 25] }
+      - { char: Ƒ, rgba: [243, 107, 25] }
+      - { char: ƒ, rgba: [243, 188, 25] }
+      - { char: Ɠ, rgba: [216, 243, 25] }
+      - { char: Ɣ, rgba: [134, 243, 25] }
+      - { char: ƕ, rgba: [52, 243, 25] }
+      - { char: Ɩ, rgba: [25, 243, 79] }
+      - { char: Ɨ, rgba: [25, 243, 161] }
+      - { char: Ƙ, rgba: [25, 243, 243] }
+      - { char: ƙ, rgba: [25, 161, 243] }
+      - { char: ƚ, rgba: [25, 79, 243] }
+      - { char: ƛ, rgba: [52, 25, 243] }
+      - { char: Ɯ, rgba: [134, 25, 243] }
+      - { char: Ɲ, rgba: [216, 25, 243] }
+      - { char: ƞ, rgba: [243, 25, 188] }
+      - { char: Ɵ, rgba: [243, 25, 107] }
+      - { char: Ơ, rgba: [244, 49, 49] }
+      - { char: ơ, rgba: [244, 122, 49] }
+      - { char: Ƣ, rgba: [244, 195, 49] }
+      - { char: ƣ, rgba: [220, 244, 49] }
+      - { char: Ƥ, rgba: [146, 244, 49] }
+      - { char: ƥ, rgba: [73, 244, 49] }
+      - { char: Ʀ, rgba: [49, 244, 98] }
+      - { char: Ƨ, rgba: [49, 244, 171] }
+      - { char: ƨ, rgba: [49, 244, 244] }
+      - { char: Ʃ, rgba: [49, 171, 244] }
+      - { char: ƪ, rgba: [49, 98, 244] }
+      - { char: ƫ, rgba: [73, 49, 244] }
+      - { char: Ƭ, rgba: [146, 49, 244] }
+      - { char: ƭ, rgba: [220, 49, 244] }
+      - { char: Ʈ, rgba: [244, 49, 195] }
+      - { char: Ư, rgba: [244, 49, 122] }
+      - { char: ư, rgba: [245, 73, 73] }
+      - { char: Ʊ, rgba: [245, 137, 73] }
+      - { char: Ʋ, rgba: [245, 202, 73] }
+      - { char: Ƴ, rgba: [224, 245, 73] }
+      - { char: ƴ, rgba: [159, 245, 73] }
+      - { char: Ƶ, rgba: [94, 245, 73] }
+      - { char: ƶ, rgba: [73, 245, 116] }
+      - { char: Ʒ, rgba: [73, 245, 181] }
+      - { char: Ƹ, rgba: [73, 245, 245] }
+      - { char: ƹ, rgba: [73, 181, 245] }
+      - { char: ƺ, rgba: [73, 116, 245] }
+      - { char: ƻ, rgba: [94, 73, 245] }
+      - { char: Ƽ, rgba: [159, 73, 245] }
+      - { char: ƽ, rgba: [224, 73, 245] }
+      - { char: ƾ, rgba: [245, 73, 202] }
+      - { char: ƿ, rgba: [245, 73, 137] }
+      - { char: ǀ, rgba: [247, 97, 97] }
+      - { char: ǁ, rgba: [247, 153, 97] }
+      - { char: ǂ, rgba: [247, 209, 97] }
+      - { char: ǃ, rgba: [228, 247, 97] }
+      - { char: Ǆ, rgba: [172, 247, 97] }
+      - { char: ǅ, rgba: [115, 247, 97] }
+      - { char: ǆ, rgba: [97, 247, 134] }
+      - { char: Ǉ, rgba: [97, 247, 190] }
+      - { char: ǈ, rgba: [97, 247, 247] }
+      - { char: ǉ, rgba: [97, 190, 247] }
+      - { char: Ǌ, rgba: [97, 134, 247] }
+      - { char: ǋ, rgba: [115, 97, 247] }
+      - { char: ǌ, rgba: [172, 97, 247] }
+      - { char: Ǎ, rgba: [228, 97, 247] }
+      - { char: ǎ, rgba: [247, 97, 209] }
+      - { char: Ǐ, rgba: [247, 97, 153] }
+      - { char: ǐ, rgba: [248, 120, 120] }
+      - { char: Ǒ, rgba: [248, 168, 120] }
+      - { char: ǒ, rgba: [248, 216, 120] }
+      - { char: Ǔ, rgba: [232, 248, 120] }
+      - { char: ǔ, rgba: [184, 248, 120] }
+      - { char: Ǖ, rgba: [136, 248, 120] }
+      - { char: ǖ, rgba: [120, 248, 152] }
+      - { char: Ǘ, rgba: [120, 248, 200] }
+      - { char: ǘ, rgba: [120, 248, 248] }
+      - { char: Ǚ, rgba: [120, 200, 248] }
+      - { char: ǚ, rgba: [120, 152, 248] }
+      - { char: Ǜ, rgba: [136, 120, 248] }
+      - { char: ǜ, rgba: [184, 120, 248] }
+      - { char: ǝ, rgba: [232, 120, 248] }
+      - { char: Ǟ, rgba: [248, 120, 216] }
+      - { char: ǟ, rgba: [248, 120, 168] }
+      - { char: Ǡ, rgba: [249, 144, 144] }
+      - { char: ǡ, rgba: [249, 184, 144] }
+      - { char: Ǣ, rgba: [249, 223, 144] }
+      - { char: ǣ, rgba: [236, 249, 144] }
+      - { char: Ǥ, rgba: [197, 249, 144] }
+      - { char: ǥ, rgba: [158, 249, 144] }
+      - { char: Ǧ, rgba: [144, 249, 171] }
+      - { char: ǧ, rgba: [144, 249, 210] }
+      - { char: Ǩ, rgba: [144, 249, 249] }
+      - { char: ǩ, rgba: [144, 210, 249] }
+      - { char: Ǫ, rgba: [144, 171, 249] }
+      - { char: ǫ, rgba: [158, 144, 249] }
+      - { char: Ǭ, rgba: [197, 144, 249] }
+      - { char: ǭ, rgba: [236, 144, 249] }
+      - { char: Ǯ, rgba: [249, 144, 223] }
+      - { char: ǯ, rgba: [249, 144, 184] }
+      - { char: ǰ, rgba: [250, 168, 168] }
+      - { char: Ǳ, rgba: [250, 199, 168] }
+      - { char: ǲ, rgba: [250, 230, 168] }
+      - { char: ǳ, rgba: [240, 250, 168] }
+      - { char: Ǵ, rgba: [209, 250, 168] }
+      - { char: ǵ, rgba: [179, 250, 168] }
+      - { char: Ƕ, rgba: [168, 250, 189] }
+      - { char: Ƿ, rgba: [168, 250, 220] }
+      - { char: Ǹ, rgba: [168, 250, 250] }
+      - { char: ǹ, rgba: [168, 220, 250] }
+      - { char: Ǻ, rgba: [168, 189, 250] }
+      - { char: ǻ, rgba: [179, 168, 250] }
+      - { char: Ǽ, rgba: [209, 168, 250] }
+      - { char: ǽ, rgba: [240, 168, 250] }
+      - { char: Ǿ, rgba: [250, 168, 230] }
+      - { char: ǿ, rgba: [250, 168, 199] }
+      - { char: Ȁ, rgba: [252, 192, 192] }
+      - { char: ȁ, rgba: [252, 215, 192] }
+      - { char: Ȃ, rgba: [252, 237, 192] }
+      - { char: ȃ, rgba: [244, 252, 192] }
+      - { char: Ȅ, rgba: [222, 252, 192] }
+      - { char: ȅ, rgba: [200, 252, 192] }
+      - { char: Ȇ, rgba: [192, 252, 207] }
+      - { char: ȇ, rgba: [192, 252, 229] }
+      - { char: Ȉ, rgba: [192, 252, 252] }
+      - { char: ȉ, rgba: [192, 229, 252] }
+      - { char: Ȋ, rgba: [192, 207, 252] }
+      - { char: ȋ, rgba: [200, 192, 252] }
+      - { char: Ȍ, rgba: [222, 192, 252] }
+      - { char: ȍ, rgba: [244, 192, 252] }
+      - { char: Ȏ, rgba: [252, 192, 237] }
+      - { char: ȏ, rgba: [252, 192, 215] }
+      - { char: Ȑ, rgba: [253, 216, 216] }
+      - { char: ȑ, rgba: [253, 230, 216] }
+      - { char: Ȓ, rgba: [253, 244, 216] }
+      - { char: ȓ, rgba: [248, 253, 216] }
+      - { char: Ȕ, rgba: [235, 253, 216] }
+      - { char: ȕ, rgba: [221, 253, 216] }
+      - { char: Ȗ, rgba: [216, 253, 225] }
+      - { char: ȗ, rgba: [216, 253, 239] }
+      - { char: Ș, rgba: [216, 253, 253] }
+      - { char: ș, rgba: [216, 239, 253] }
+      - { char: Ț, rgba: [216, 225, 253] }
+      - { char: ț, rgba: [221, 216, 253] }
+      - { char: Ȝ, rgba: [235, 216, 253] }
+      - { char: ȝ, rgba: [248, 216, 253] }
+      - { char: Ȟ, rgba: [253, 216, 244] }
+      - { char: ȟ, rgba: [253, 216, 230] }
+
+sprites:
+  - id: coin
+    _palette: gold
+    lines:
+      - "..gggg.."
+      - ".g....g."
+      - "g..gg..g"
+      - "g.g..g.g"
+      - "g.g..g.g"
+      - "g..gg..g"
+      - ".g....g."
+      - "..gggg.."
+
+  - id: heart
+    _palette: warm
+    lines:
+      - ".rr.rr."
+      - "rhrrrrr"
+      - "rrrrrrr"
+      - ".rrrrr."
+      - "..rrr.."
+      - "...r..."
+
+  - id: slime
+    _palette: slime
+    lines:
+      - "....oooo...."
+      - "..ooLLLLoo.."
+      - ".oLLLMMMMMo."
+      - ".oLwkMMwkMo."
+      - "oMMwkMMwkMDo"
+      - "oMMMMMMMMDDo"
+      - "oDDMMMMMDDDo"
+      - ".oooooooooo."
+      - "..ssssssss.."
+
+  - id: slime-ice
+    _sprite: slime
+    _palette: ice
+
+  - id: sunset
+    _palette: sunset
+    lines:
+      - "AAAAAAAAAAAAAAAAAAAAAAAA"
+      - "BBBBBBBBBBBBBBBBBBBBBBBB"
+      - "CCCCCCCCCCCCCCCCCCCCCCCC"
+      - "DDDDDDDDDDDDDDDDDDDDDDDD"
+      - "EEEEEEEEEEEEEEEEEEEEEEEE"
+      - "FFFFFFFFFFFFFFFFFFFFFFFF"
+      - "GGGGGGGGGGGGGGGGGGGGGGGG"
+      - "HHHHHHHHHHHHHHHHHHHHHHHH"
+      - "IIIIIIIIIIIIIIIIIIIIIIII"
+      - "JJJJJJJJJJJJJJJJJJJJJJJJ"
+      - "KKKKKKKKKKKKKKKKKKKKKKKK"
+      - "LLLLLLLLLLLLLLLLLLLLLLLL"
+      - "MMMMMMMMM++++++MMMMMMMMM"
+      - "NNNNNNNN++****++NNNNNNNN"
+      - "OOOOOOO++******++OOOOOOO"
+      - "PPPPPPP+********+PPPPPPP"
+      - "QQQQQQQ+********+QQQQQQQ"
+      - "RRRRRRR~R~R~R~R~RRRRRRRR"
+      - "SSSSSSSS~S~S~S~SSSSSSSSS"
+      - "TTTTTTTTT~T~T~TTTTTTTTTT"
+      - "UUUUUUUUUU~U~UUUUUUUUUUU"
+      - "VVVVVVVVVVV~V~VVVVVVVVVV"
+      - "WWWWWWWWWWWW~WWWWWWWWWWW"
+      - "XXXXXXXXXXXXXXXXXXXXXXXX"
+
+  - id: spectrum
+    _palette: spectrum
+    lines:
+      - "ĀāĂăĄąĆćĈĉĊċČčĎď"
+      - "ĐđĒēĔĕĖėĘęĚěĜĝĞğ"
+      - "ĠġĢģĤĥĦħĨĩĪīĬĭĮį"
+      - "İıĲĳĴĵĶķĸĹĺĻļĽľĿ"
+      - "ŀŁłŃńŅņŇňŉŊŋŌōŎŏ"
+      - "ŐőŒœŔŕŖŗŘřŚśŜŝŞş"
+      - "ŠšŢţŤťŦŧŨũŪūŬŭŮů"
+      - "ŰűŲųŴŵŶŷŸŹźŻżŽžſ"
+      - "ƀƁƂƃƄƅƆƇƈƉƊƋƌƍƎƏ"
+      - "ƐƑƒƓƔƕƖƗƘƙƚƛƜƝƞƟ"
+      - "ƠơƢƣƤƥƦƧƨƩƪƫƬƭƮƯ"
+      - "ưƱƲƳƴƵƶƷƸƹƺƻƼƽƾƿ"
+      - "ǀǁǂǃǄǅǆǇǈǉǊǋǌǍǎǏ"
+      - "ǐǑǒǓǔǕǖǗǘǙǚǛǜǝǞǟ"
+      - "ǠǡǢǣǤǥǦǧǨǩǪǫǬǭǮǯ"
+      - "ǰǱǲǳǴǵǶǷǸǹǺǻǼǽǾǿ"
+      - "ȀȁȂȃȄȅȆȇȈȉȊȋȌȍȎȏ"
+      - "ȐȑȒȓȔȕȖȗȘșȚțȜȝȞȟ"

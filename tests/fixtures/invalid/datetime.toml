@@ -1,0 +1,5 @@
+# TOML date-times have no JSON equivalent.
+[[palettes]]
+id = "p"
+created = 1979-05-27T07:32:00Z
+colors = [{ char = "r", rgba = [255, 0, 0] }]

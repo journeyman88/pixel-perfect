@@ -1,0 +1,133 @@
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand, ValueEnum};
+use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions};
+use pixel_perfect::{LoadError, ResolvedWorksheet};
+
+/// Renders lossless pixel art from declarative worksheets.
+#[derive(Parser)]
+#[command(version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Validate worksheets (.json, .yaml, .yml, .toml) without rendering.
+    Validate {
+        /// Worksheet files to validate.
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Render the exported resources of a worksheet to image files.
+    Render {
+        /// Worksheet file (.json, .yaml, .yml, .toml).
+        worksheet: PathBuf,
+        /// Root output directory; files go to <collection>/<name>.<format>.
+        #[arg(short = 'o', long, default_value = ".")]
+        output_path: PathBuf,
+        /// Output image format.
+        #[arg(long, value_enum, default_value_t = Format::Png)]
+        format: Format,
+        /// Integer upscale factor (each pixel becomes an N x N block).
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=64))]
+        scale: u32,
+        /// Name files by the BLAKE2b-64 hash of their id (any id works).
+        #[arg(long)]
+        safe_build: bool,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Png,
+}
+
+/// Success.
+const OK: u8 = 0;
+/// At least one worksheet or the export request is invalid.
+const INVALID: u8 = 1;
+/// Usage error, unreadable or unsupported file, or write failure.
+const USAGE: u8 = 2;
+
+fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            let _ = e.print();
+            return ExitCode::from(if e.use_stderr() { USAGE } else { OK });
+        }
+    };
+    let code = match cli.command {
+        Command::Validate { files } => validate(&files),
+        Command::Render {
+            worksheet,
+            output_path,
+            format,
+            scale,
+            safe_build,
+        } => {
+            let options = RenderOptions {
+                output_path,
+                format: match format {
+                    Format::Png => OutputFormat::Png,
+                },
+                scale,
+                safe_build,
+            };
+            render(&worksheet, &options)
+        }
+    };
+    ExitCode::from(code)
+}
+
+/// Loads a worksheet, printing its problems. Returns the exit code on failure.
+fn load(path: &Path) -> Result<ResolvedWorksheet, u8> {
+    pixel_perfect::load_file(path).map_err(|e| match e {
+        LoadError::Invalid { diagnostics } => {
+            for d in &diagnostics {
+                eprintln!("{}: {d}", path.display());
+            }
+            INVALID
+        }
+        e => {
+            eprintln!("{e}");
+            USAGE
+        }
+    })
+}
+
+fn validate(files: &[PathBuf]) -> u8 {
+    files
+        .iter()
+        .map(|path| load(path).err().unwrap_or(OK))
+        .max()
+        .unwrap_or(OK)
+}
+
+fn render(path: &Path, options: &RenderOptions) -> u8 {
+    let ws = match load(path) {
+        Ok(ws) => ws,
+        Err(code) => return code,
+    };
+    match export::render(&ws, options) {
+        Ok((plan, _)) => {
+            for notice in &plan.notices {
+                eprintln!("{}: note: {notice}", path.display());
+            }
+            OK
+        }
+        Err(RenderError::Plan(diagnostics)) => {
+            for d in &diagnostics {
+                eprintln!("{}: {d}", path.display());
+            }
+            INVALID
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            USAGE
+        }
+    }
+}

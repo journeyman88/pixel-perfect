@@ -1,0 +1,45 @@
+{
+  "$schema": "../../../schema/worksheet.schema.json",
+  "palettes": [
+    {
+      "id": "warm",
+      "colors": [
+        { "char": "r", "rgba": [220, 40, 60] },
+        { "char": "h", "rgba": [255, 255, 255, 0.6] }
+      ]
+    },
+    {
+      "id": "dark",
+      "_palette": "warm",
+      "colors": [{ "char": "r", "rgba": [120, 10, 30] }]
+    }
+  ],
+  "sprites": [
+    {
+      "id": "heart",
+      "_palette": "warm",
+      "lines": [
+        ".rr.rr.",
+        "rhrrrrr",
+        "rrrrrrr",
+        ".rrrrr.",
+        "..rrr..",
+        "...r..."
+      ]
+    },
+    { "id": "heart-dark", "_sprite": "heart", "_palette": "dark" }
+  ],
+  "flipbooks": [
+    {
+      "id": "beat",
+      "width": 7,
+      "height": 6,
+      "fps": 4,
+      "frames": [
+        { "_sprite": "heart", "coordinates": [0, 0], "duration": 3 },
+        { "_sprite": "heart-dark", "coordinates": [0, 0], "duration": 1 }
+      ]
+    }
+  ],
+  "exports": ["/sprites/heart", "/sprites/heart-dark"]
+}

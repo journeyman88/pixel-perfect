@@ -1,0 +1,47 @@
+schema: spec-driven
+
+context: |
+  Project: pixel-perfect — a Rust engine that renders lossless pixel art from a
+  declarative worksheet.
+
+  Input: a worksheet written in JSON, YAML or TOML (format chosen by file
+  extension). All three are loaded into the JSON data model and validated
+  against a single JSON Schema (draft 2020-12): schema/worksheet.schema.json.
+  The schema is the source of truth for the worksheet format. Constraints the
+  schema cannot express are marked with `$comment: "Engine: ..."` and MUST be
+  enforced by the engine as semantic validation. XML input (with a dedicated
+  schema) is a possible future addition, not in scope now.
+
+  Worksheet concepts: palettes (single-char -> RGBA, with inheritance),
+  sprites (character grids, with inheritance and overrideLines), flipbooks
+  (sprite animations), panels (single-plane compositions), timelines (panel
+  animations via transitions), scenes (multi-layer compositions), exports.
+
+  Output: PNG and APNG first; WebP (static and animated, lossless) later.
+  Output format (--format), integer upscale (--scale N), output directory
+  (--output-path) and hashed file names (--safe-build) are CLI options, not
+  worksheet fields. CLI flags are kebab-case. Outputs go to
+  <output-path>/<collection>/<id|hash>.<format>, plus manifest.json.
+
+  Stack: Rust (edition 2024, toolchain 1.95), single crate with a library
+  (lib.rs) and a CLI binary (main.rs, clap). Licensed Apache-2.0.
+
+  Engine principles:
+  - Deterministic, byte-for-byte reproducible output.
+  - No antialiasing, no filtering: nearest-neighbor only.
+  - Alpha is authored as 0.0-1.0 and converted to 8 bits as
+    round_half_up(alpha * 255).
+  - Compositing is source-over, non-premultiplied, with a fixed rounding rule.
+
+rules:
+  proposal:
+    - Write in English.
+  specs:
+    - Write in English.
+    - Reference worksheet fields by their exact schema names (e.g. `_palette`, `overrideLines`).
+  design:
+    - Write in English.
+    - Prefer pure-Rust dependencies; justify any C dependency.
+  tasks:
+    - Write in English.
+    - Every behavior task has a matching test task (fixtures under tests/fixtures/).

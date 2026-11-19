@@ -1,0 +1,73 @@
+{
+  "palettes": [
+    {
+      "id": "base",
+      "description": "Opaque red and green, half-transparent white.",
+      "colors": [
+        { "char": "r", "rgba": [255, 0, 0] },
+        { "char": "g", "rgba": [0, 255, 0, 1.0] },
+        { "char": "w", "rgba": [255, 255, 255, 0.5] }
+      ]
+    },
+    { "id": "night", "_palette": "base", "colors": [{ "char": "r", "rgba": [80, 0, 0] }, { "char": "b", "rgba": [0, 0, 255] }] },
+    { "id": "night-deep", "_palette": "night" }
+  ],
+  "sprites": [
+    { "id": "block", "_palette": "base", "width": 4, "height": 8, "lines": ["rrgg", "rrgg", "wwww", "wwww", "....", "....", "gggg", "rrrr"] },
+    { "id": "block-night", "_sprite": "block", "_palette": "night", "overrideLines": { "0": "==b=", "7": "bbbb" } },
+    { "id": "block-deep", "_sprite": "block-night", "_palette": "night-deep" }
+  ],
+  "flipbooks": [
+    {
+      "id": "spin",
+      "width": 8,
+      "height": 8,
+      "fps": 12,
+      "frames": [
+        { "_sprite": "block", "coordinates": [0, 0], "duration": 2 },
+        { "_sprite": "block", "coordinates": [0, 0], "duration": 2, "transforms": [{ "kind": "rotate", "degrees": 90 }, { "kind": "crop", "area": [0, 0, 8, 4] }] },
+        { "_sprite": "block-night", "coordinates": [-2, 3], "duration": 1, "transforms": [{ "kind": "flip", "axis": "x" }, { "kind": "flip", "axis": "y" }, { "kind": "rotate", "degrees": 180 }] },
+        { "_sprite": "block-deep", "coordinates": [0, 0], "duration": 1, "transforms": [{ "kind": "scale", "width": 8, "height": 16 }, { "kind": "crop", "area": [0, 8, 8, 8] }] }
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "stage",
+      "width": 32,
+      "height": 16,
+      "elements": [
+        { "id": "hero", "_sprite": "block", "coordinates": [0, 0], "zIndex": 2, "description": "The hero." },
+        { "id": "spinner", "_flipbook": "spin", "coordinates": [40, -4], "visible": false, "transforms": [{ "kind": "crop", "area": [1, 1, 6, 6] }] },
+        { "_sprite": "block-night", "coordinates": [10, 2] }
+      ]
+    }
+  ],
+  "timelines": [
+    {
+      "id": "walk",
+      "_panel": "stage",
+      "fps": 10,
+      "duration": 40,
+      "transitions": [
+        { "kind": "moveTo", "_element": "hero", "coordinates": [28, 8], "start": 0, "duration": 30 },
+        { "kind": "setVisible", "_element": "spinner", "value": true, "at": 10 },
+        { "kind": "moveToZ", "_element": "spinner", "value": 5, "at": 12 },
+        { "kind": "appendTransforms", "_element": "hero", "transforms": [{ "kind": "flip", "axis": "x" }], "at": 20 },
+        { "kind": "resetTransforms", "_element": "hero", "at": 35 }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "night",
+      "width": 64,
+      "height": 32,
+      "layers": [
+        { "_panel": "stage", "coordinates": [0, 0] },
+        { "_timeline": "walk", "coordinates": [16, 16], "zIndex": -1 }
+      ]
+    }
+  ],
+  "exports": ["/sprites/block", "/flipbooks/spin", "/panels/stage", "/timelines/walk", "/scenes/night"]
+}
