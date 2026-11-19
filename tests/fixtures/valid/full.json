@@ -54,7 +54,8 @@
         { "kind": "setVisible", "_element": "spinner", "value": true, "at": 10 },
         { "kind": "moveToZ", "_element": "spinner", "value": 5, "at": 12 },
         { "kind": "appendTransforms", "_element": "hero", "transforms": [{ "kind": "flip", "axis": "x" }], "at": 20 },
-        { "kind": "resetTransforms", "_element": "hero", "at": 35 }
+        { "kind": "resetTransforms", "_element": "hero", "at": 35 },
+        { "kind": "seekFlipbook", "_element": "spinner", "frameIndex": 2, "at": 15 }
       ]
     }
   ],

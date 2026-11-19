@@ -75,6 +75,26 @@ fn unknown_element_in_transition() {
     );
 }
 
+#[test]
+fn seek_flipbook_on_a_sprite_element() {
+    let e = invalid_with(&[("/timelines/0/transitions/5/_element", json!("hero"))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/5/_element",
+        "seekFlipbook targets element \"hero\", which is not a flipbook",
+    );
+}
+
+#[test]
+fn seek_flipbook_frame_index_out_of_range() {
+    let e = invalid_with(&[("/timelines/0/transitions/5/frameIndex", json!(4))]);
+    assert_error(
+        &e,
+        "/timelines/0/transitions/5/frameIndex",
+        "frameIndex 4 is out of range: flipbook \"spin\" has 4 frames",
+    );
+}
+
 // Inheritance cycles
 
 #[test]

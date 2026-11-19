@@ -133,6 +133,18 @@ fn invalid_transitions() {
             "/timelines/0/transitions/4",
             json!({ "kind": "teleport", "_element": "hero", "at": 1 }),
         ),
+        (
+            "/timelines/0/transitions/5",
+            json!({ "kind": "seekFlipbook", "_element": "spinner", "frameIndex": -1, "at": 1 }),
+        ),
+        (
+            "/timelines/0/transitions/5",
+            json!({ "kind": "seekFlipbook", "_element": "spinner", "frameIndex": 0 }),
+        ),
+        (
+            "/timelines/0/transitions/5",
+            json!({ "kind": "seekFlipbook", "_element": "spinner", "at": 1, "value": 2 }),
+        ),
     ];
     for (pointer, case) in cases {
         let mut doc = full();

@@ -249,6 +249,14 @@ pub enum Transition {
         element: String,
         at: u64,
     },
+    SeekFlipbook {
+        #[serde(rename = "_element")]
+        element: String,
+        /// Index into the flipbook's `frames`, not a frame-unit.
+        #[serde(default, rename = "frameIndex")]
+        frame_index: usize,
+        at: u64,
+    },
 }
 
 impl Transition {
@@ -259,7 +267,8 @@ impl Transition {
             | Transition::SetVisible { element, .. }
             | Transition::MoveToZ { element, .. }
             | Transition::AppendTransforms { element, .. }
-            | Transition::ResetTransforms { element, .. } => element,
+            | Transition::ResetTransforms { element, .. }
+            | Transition::SeekFlipbook { element, .. } => element,
         }
     }
 }

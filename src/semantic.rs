@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::error::Diagnostic;
-use crate::model::{ElementSource, Rotation, Transform, Worksheet};
+use crate::model::{ElementSource, Rotation, Transform, Transition, Worksheet};
 use crate::resolve::{self, ResolvedPalette, ResolvedSprite};
 
 /// A worksheet that passed every check, with inheritance resolved.
@@ -198,15 +198,39 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
         let panel = &ws.panels[p];
         for (j, transition) in t.transitions.iter().enumerate() {
             let element = transition.element();
-            if !panel
+            let Some(target) = panel
                 .elements
                 .iter()
-                .any(|e| e.id.as_deref() == Some(element))
-            {
+                .find(|e| e.id.as_deref() == Some(element))
+            else {
                 diagnostics.push(Diagnostic::at(
                     format!("/timelines/{i}/transitions/{j}/_element"),
                     format!("panel {:?} has no element with id {element:?}", panel.id),
                 ));
+                continue;
+            };
+            if let Transition::SeekFlipbook { frame_index, .. } = transition {
+                match target.source() {
+                    ElementSource::Sprite(_) => diagnostics.push(Diagnostic::at(
+                        format!("/timelines/{i}/transitions/{j}/_element"),
+                        format!(
+                            "seekFlipbook targets element {element:?}, which is not a flipbook"
+                        ),
+                    )),
+                    ElementSource::Flipbook(f) => {
+                        if let Some(&fb) = flipbooks.get(f) {
+                            let count = ws.flipbooks[fb].frames.len();
+                            if *frame_index >= count {
+                                diagnostics.push(Diagnostic::at(
+                                    format!("/timelines/{i}/transitions/{j}/frameIndex"),
+                                    format!(
+                                        "frameIndex {frame_index} is out of range: flipbook {f:?} has {count} frames"
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }

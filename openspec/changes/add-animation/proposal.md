@@ -15,7 +15,10 @@ before it can produce frames whose timing is exact.
     frame-unit (rounding rule to be fixed in the specs);
   - `setVisible`, `moveToZ`;
   - `appendTransforms`, `resetTransforms`, including run-time bounds checks for
-    `crop` on extended chains.
+    `crop` on extended chains;
+  - `seekFlipbook`: at frame-unit `at`, jump a flipbook element to the start of
+    frame `frameIndex` (an index into `frames`, not a frame-unit; default 0 =
+    restart), then keep playing at the flipbook's `fps`.
   Flipbook elements inside a timeline play at their own `fps`.
 - Scenes with timeline layers: each layer loops on its own length.
 - Common time base. The frame clock is the least common multiple of the `fps`
@@ -31,6 +34,10 @@ Open points to settle in the specs:
 - Whether transitions with `start`/`at` beyond the timeline `duration` are
   errors or ignored.
 - Loop count (always infinite, or a CLI option).
+- Whether the phase of flipbook elements resets at every timeline loop
+  (proposed: yes, consistent with "every loop starts from the panel's state";
+  the timeline loop length then stays exactly `duration` and `seekFlipbook`
+  behaves the same on every loop).
 
 ## Capabilities
 
@@ -41,6 +48,8 @@ Open points to settle in the specs:
 ### Modified Capabilities
 - `composition`: static fallback rules extended to the animated case.
 - `png-export`: the `render` command chooses APNG for animated resources.
+- `worksheet-loading`: `seekFlipbook` must target a flipbook element and
+  `frameIndex` must be less than its number of frames.
 
 ## Impact
 
