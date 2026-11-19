@@ -6,9 +6,9 @@ You describe palettes, sprites, animations and compositions in a plain-text
 file. pixel-perfect turns them into pixel-exact images: same input, same bytes,
 every time. No antialiasing, no filtering, nearest-neighbor only.
 
-> **Status:** early stage. Worksheets can be loaded and validated, and sprites
-> can be rendered to PNG. Flipbooks, panels, timelines and scenes are not
-> rendered yet. Development is planned with
+> **Status:** early stage. Worksheets can be loaded and validated, and sprites,
+> panels and scenes can be rendered to PNG. Animations (flipbooks, timelines,
+> and panels or scenes that contain them) are not rendered yet. Development is planned with
 > [OpenSpec](https://github.com/Fission-AI/OpenSpec) (see [`openspec/`](openspec/)).
 
 ## Usage
@@ -44,6 +44,7 @@ pixel-perfect render hero.json --output-path out --scale 4
 | `--format <format>` | `png` | Output format (only `png` for now). |
 | `--scale <N>` | `1` | Integer upscale, 1–64: every pixel becomes an N×N block. |
 | `--safe-build` | off | Name files by a hash of their id (see below). |
+| `--max-image-size <SIZE>` | `1GiB` | Largest image the engine may build (see below). |
 
 Files are written to `<output-path>/<collection>/<id>.<format>`, for example
 `out/sprites/hero.png`. Ids that are not portable file names (containing `/`,
@@ -74,8 +75,25 @@ Output is deterministic: the same worksheet and options give byte-identical
 files. Nothing is written if the worksheet or the export request is invalid,
 and files from earlier renders are never deleted.
 
-Exporting resource types that cannot be rendered yet is an error when they are
-listed in `exports`; when `exports` is omitted they are skipped with a note.
+Exporting resources that cannot be rendered yet (flipbooks, timelines, and
+panels or scenes containing them) is an error when they are listed in
+`exports`; when `exports` is omitted they are skipped with a note.
+
+Panels and scenes are composed with **source-over** on non-premultiplied alpha,
+computed in integer arithmetic with a fixed rounding rule, so semi-transparent
+pixels blend to the same bytes on every platform. Elements are drawn by
+`zIndex` (ties in array order), after their own `transforms`, and clipped to
+the canvas. In a scene, each panel is first flattened on its own canvas and
+then composited as one layer.
+
+`--max-image-size` guards against worksheets that would need huge amounts of
+memory, for example a panel declared 100000×100000 or a `scale` transform to a
+giant size. Every image the engine builds (sprites, transform results,
+canvases, the final image after `--scale`) is measured as RGBA8 bytes before
+anything is rendered; if one is over the limit, the render fails and names the
+resource. SIZE is a number of bytes with an optional `KiB`, `MiB`, `GiB` or
+`TiB` suffix, or `none` for no limit. It is a guard against mistakes, not a
+memory budget: the peak memory use is a few times the largest image.
 
 ## Why
 

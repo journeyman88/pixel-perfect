@@ -3,6 +3,11 @@
   "scale": 4,
   "safeBuild": true,
   "files": {
+    "/panels/stage": {
+      "path": "panels/862b22a72d9a59b6.png",
+      "width": 128,
+      "height": 64
+    },
     "/sprites/block": {
       "path": "sprites/049a3c8654f8ca03.png",
       "width": 16,

@@ -1,0 +1,159 @@
+# A static scene: three panels stacked as layers.
+#
+#   pixel-perfect render examples/composition.yaml -o out --scale 8
+#
+# Writes the sprites, the panels `backdrop`, `actors` and `mist`, and the
+# scene `dusk` (32x20, 256x160 with --scale 8). What it shows:
+#
+# - elements placed with `coordinates`, also negative or partly outside the
+#   panel (they are clipped);
+# - `zIndex`: higher on top, ties in array order;
+# - element `transforms` (scale, flip, rotate) applied before placement;
+# - a hidden element (`visible: false`) that is not drawn;
+# - semi-transparent colors blended with source-over: the mist and the
+#   shadows create colors that are in no palette;
+# - each panel flattened first, then composited on the scene as a group.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  - id: dusk
+    colors:
+      - { char: a, rgba: [44, 30, 82] }        # sky, top
+      - { char: b, rgba: [92, 50, 110] }
+      - { char: c, rgba: [170, 80, 110] }
+      - { char: d, rgba: [240, 140, 100] }     # sky, horizon
+      - { char: h, rgba: [40, 60, 70] }        # far hills
+      - { char: g, rgba: [40, 90, 50] }        # grass
+      - { char: G, rgba: [60, 120, 60] }       # grass highlight
+      - { char: s, rgba: [255, 230, 160] }     # sun
+      - { char: S, rgba: [255, 230, 160, 0.4] } # sun glow
+      - { char: t, rgba: [60, 40, 30] }        # trunk
+      - { char: l, rgba: [30, 70, 40] }        # leaves
+      - { char: m, rgba: [210, 200, 255, 0.35] } # mist
+      - { char: x, rgba: [0, 0, 0, 0.3] }      # shadow
+
+  - id: slime
+    colors:
+      - { char: o, rgba: [20, 70, 30] }
+      - { char: L, rgba: [150, 230, 120] }
+      - { char: M, rgba: [80, 180, 70] }
+      - { char: w, rgba: [255, 255, 255] }
+      - { char: k, rgba: [10, 10, 20] }
+      - { char: x, rgba: [0, 0, 0, 0.3] }
+
+  - id: slime-blue
+    _palette: slime
+    colors:
+      - { char: o, rgba: [20, 40, 90] }
+      - { char: L, rgba: [190, 220, 255] }
+      - { char: M, rgba: [100, 150, 230] }
+
+sprites:
+  # Four sky bands, stretched to the panel with a `scale` transform.
+  - id: sky
+    _palette: dusk
+    lines: ["a", "b", "c", "d"]
+
+  - id: sun
+    _palette: dusk
+    lines:
+      - ".SSSS."
+      - "SSssSS"
+      - "SssssS"
+      - "SssssS"
+
+  - id: hills
+    _palette: dusk
+    lines:
+      - "....hhh.........hhhh......hh...."
+      - "..hhhhhhh....hhhhhhhhh..hhhhhh.."
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+
+  - id: grass
+    _palette: dusk
+    lines:
+      - "GgGggGgggGggGgGgggGgGggGgggGgGgg"
+      - "gggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggg"
+
+  - id: tree
+    _palette: dusk
+    lines:
+      - ".lll."
+      - "lllll"
+      - "lllll"
+      - ".ltl."
+      - "..t.."
+      - "..t.."
+      - "xxxxx"
+
+  - id: slime
+    _palette: slime
+    lines:
+      - "..oooo.."
+      - ".oLLLMo."
+      - "oLwkMwko"
+      - "oMwkMwko"
+      - "oMMMMMMo"
+      - ".oooooo."
+      - "xxxxxxxx"
+
+  - id: slime-blue
+    _sprite: slime
+    _palette: slime-blue
+
+  - id: mist
+    _palette: dusk
+    lines:
+      - "mm.mmm..mmmm.mm."
+      - ".mmmmmmmm..mmmmm"
+
+panels:
+  - id: backdrop
+    width: 32
+    height: 20
+    elements:
+      - _sprite: sky
+        coordinates: [0, 0]
+        transforms: [{ kind: scale, width: 32, height: 12 }]
+      - { _sprite: sun, coordinates: [23, 7] }
+      # Hills cover the lower part of the sun: same zIndex, later in the array.
+      - { _sprite: hills, coordinates: [0, 10] }
+      - { _sprite: grass, coordinates: [0, 13] }
+      - _sprite: grass
+        coordinates: [0, 18]
+        transforms: [{ kind: rotate, degrees: 180 }]
+
+  - id: actors
+    width: 32
+    height: 20
+    elements:
+      - { _sprite: tree, coordinates: [2, 8] }
+      # Partly outside the panel on the right: clipped.
+      - { _sprite: tree, coordinates: [29, 9], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: slime, coordinates: [9, 11], zIndex: 1 }
+      - _sprite: slime-blue
+        coordinates: [18, 11]
+        zIndex: 1
+        transforms: [{ kind: flip, axis: x }]
+      # Not drawn.
+      - { _sprite: slime, coordinates: [0, 0], visible: false }
+
+  - id: mist
+    width: 32
+    height: 20
+    elements:
+      - { _sprite: mist, coordinates: [-4, 14] }
+      - { _sprite: mist, coordinates: [12, 15] }
+      - { _sprite: mist, coordinates: [26, 14] }
+
+scenes:
+  - id: dusk
+    width: 32
+    height: 20
+    layers:
+      - { _panel: mist, coordinates: [0, 0], zIndex: 2 }
+      - { _panel: actors, coordinates: [0, 0], zIndex: 1 }
+      - { _panel: backdrop, coordinates: [0, 0] }

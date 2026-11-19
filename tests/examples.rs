@@ -24,6 +24,7 @@ fn sprites_example_covers_every_encoding() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, _) = export::render(&ws, &options).unwrap();
     assert!(plan.notices.is_empty());
@@ -42,4 +43,49 @@ fn sprites_example_covers_every_encoding() {
         let png = std::fs::read(dir.path().join(format!("sprites/{id}.png"))).unwrap();
         assert_eq!(header(&png), (width, height, depth, color_type), "{id}");
     }
+}
+
+#[test]
+fn composition_example_renders_its_scene() {
+    let ws = pixel_perfect::load_file(&example("composition.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, _) = export::render(&ws, &options).unwrap();
+    assert!(plan.notices.is_empty());
+    assert_eq!(plan.outputs.len(), 8 + 3 + 1, "sprites, panels, scene");
+
+    // (file, bit depth): every composition stays indexed.
+    for (file, depth) in [
+        ("panels/mist.png", 1),
+        ("panels/actors.png", 4),
+        ("panels/backdrop.png", 4),
+        ("scenes/dusk.png", 8),
+    ] {
+        let png = std::fs::read(dir.path().join(file)).unwrap();
+        assert_eq!(header(&png), (32, 20, depth, 3), "{file}");
+    }
+}
+
+#[test]
+fn masquerade_example_renders_its_scene() {
+    let ws = pixel_perfect::load_file(&example("masquerade.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, _) = export::render(&ws, &options).unwrap();
+    assert!(plan.notices.is_empty());
+    assert_eq!(plan.outputs.len(), 1, "only the scene is exported");
+    let png = std::fs::read(dir.path().join("scenes/masquerade.png")).unwrap();
+    assert_eq!(header(&png), (256, 256, 8, 3));
 }

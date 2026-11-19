@@ -1,4 +1,4 @@
-//! Sprite rasterization, export planning, safe build and manifest.
+//! Sprite rasterization, export selection, planning, safe build and manifest.
 
 mod common;
 #[path = "common/images.rs"]
@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::Command;
 
 use common::assert_error;
+use pixel_perfect::encode::{self, Encoding};
 use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions};
 use pixel_perfect::model::Rgba;
 use pixel_perfect::raster::TRANSPARENT;
@@ -44,6 +45,7 @@ fn options(dir: &Path) -> RenderOptions {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     }
 }
 
@@ -136,46 +138,202 @@ fn explicit_exports_select_resources() {
     assert_eq!(files(dir.path()), ["manifest.json", "sprites/hero.png"]);
 }
 
+/// Sprites `a` (red) and `g` (half green), a static panel `stage`, an
+/// animated panel `moving`, a flipbook, a timeline, a static scene `day` and an
+/// animated scene `night`.
+fn compositions(exports: Option<Value>) -> ResolvedWorksheet {
+    let mut doc = json!({
+        "palettes": [{ "id": "p", "colors": [
+            { "char": "r", "rgba": [255, 0, 0] },
+            { "char": "g", "rgba": [0, 255, 0, 0.5] }
+        ] }],
+        "sprites": [
+            { "id": "a", "_palette": "p", "lines": ["rr"] },
+            { "id": "g", "_palette": "p", "lines": ["g"] }
+        ],
+        "flipbooks": [{ "id": "spin", "width": 2, "height": 1, "fps": 1,
+            "frames": [{ "_sprite": "a", "coordinates": [0, 0], "duration": 1 }] }],
+        "panels": [
+            { "id": "stage", "width": 3, "height": 1, "elements": [
+                { "id": "base", "_sprite": "a", "coordinates": [0, 0] },
+                { "_sprite": "g", "coordinates": [0, 0] },
+                { "_flipbook": "spin", "coordinates": [0, 0], "visible": false }
+            ] },
+            { "id": "moving", "width": 2, "height": 1, "elements": [
+                { "_flipbook": "spin", "coordinates": [0, 0] }
+            ] }
+        ],
+        "timelines": [{ "id": "walk", "_panel": "stage", "fps": 1, "duration": 2,
+            "transitions": [{ "kind": "setVisible", "_element": "base", "value": false, "at": 1 }] }],
+        "scenes": [
+            { "id": "day", "width": 4, "height": 2, "layers": [{ "_panel": "stage", "coordinates": [1, 1] }] },
+            { "id": "night", "width": 4, "height": 2, "layers": [{ "_timeline": "walk", "coordinates": [0, 0] }] }
+        ]
+    });
+    if let Some(e) = exports {
+        doc["exports"] = e;
+    }
+    common::load(doc)
+}
+
 #[test]
 fn implicit_exports_skip_unsupported_with_a_notice() {
-    let doc = json!({
-        "palettes": [{ "id": "p", "colors": [{ "char": "r", "rgba": [1, 2, 3] }] }],
-        "sprites": [{ "id": "a", "_palette": "p", "lines": ["r"] }, { "id": "b", "_palette": "p", "lines": ["r"] }],
-        "panels": [{ "id": "stage", "width": 2, "height": 2, "elements": [{ "_sprite": "a", "coordinates": [0, 0] }] }]
-    });
-    let ws = pixel_perfect::load_value(doc).unwrap();
+    let ws = compositions(None);
     let dir = tempfile::tempdir().unwrap();
     let (plan, _) = export::render(&ws, &options(dir.path())).unwrap();
     assert_eq!(
         files(dir.path()),
-        ["manifest.json", "sprites/a.png", "sprites/b.png"]
+        [
+            "manifest.json",
+            "panels/stage.png",
+            "scenes/day.png",
+            "sprites/a.png",
+            "sprites/g.png"
+        ]
     );
-    assert_eq!(plan.notices.len(), 1);
-    assert!(
-        plan.notices[0].contains("panels are not supported yet"),
-        "{:?}",
-        plan.notices
+    assert_eq!(
+        plan.notices,
+        [
+            "skipped 1 resource(s) in flipbooks: flipbooks are not supported yet",
+            "skipped 1 resource(s) in panels: animated panels are not supported yet",
+            "skipped 1 resource(s) in timelines: timelines are not supported yet",
+            "skipped 1 resource(s) in scenes: animated scenes are not supported yet",
+        ]
     );
 }
 
 #[test]
+fn static_panel_and_scene_are_exported() {
+    let ws = compositions(Some(json!(["/panels/stage", "/scenes/day"])));
+    let dir = tempfile::tempdir().unwrap();
+    let (_, manifest) = export::render(&ws, &options(dir.path())).unwrap();
+    assert_eq!(
+        files(dir.path()),
+        ["manifest.json", "panels/stage.png", "scenes/day.png"]
+    );
+    let stage = &manifest.files["/panels/stage"];
+    assert_eq!((stage.width, stage.height), (3, 1));
+    let day = &manifest.files["/scenes/day"];
+    assert_eq!((day.width, day.height), (4, 2));
+    let (_, _, pixels) = images::decode(&std::fs::read(dir.path().join("scenes/day.png")).unwrap());
+    let mixed = Rgba([127, 128, 0, 255]);
+    let red = Rgba([255, 0, 0, 255]);
+    let t = TRANSPARENT;
+    assert_eq!(pixels, [t, t, t, t, t, mixed, red, t]);
+}
+
+#[test]
 fn unsupported_explicit_export_writes_nothing() {
-    let ws = pixel_perfect::load_file(&common::fixture("valid/full.json")).unwrap();
+    let ws = compositions(Some(json!([
+        "/sprites/a",
+        "/flipbooks/spin",
+        "/panels/moving",
+        "/timelines/walk",
+        "/scenes/night"
+    ])));
     let dir = tempfile::tempdir().unwrap();
     let err = export::render(&ws, &options(dir.path())).unwrap_err();
     let RenderError::Plan(diagnostics) = err else {
         panic!("expected a plan error")
     };
-    assert_error(&diagnostics, "/exports/2", "panels are not supported yet");
+    assert_error(
+        &diagnostics,
+        "/exports/1",
+        "flipbooks are not supported yet",
+    );
+    assert_error(
+        &diagnostics,
+        "/exports/2",
+        "animated panels are not supported yet",
+    );
+    assert_error(
+        &diagnostics,
+        "/exports/3",
+        "timelines are not supported yet",
+    );
+    assert_error(
+        &diagnostics,
+        "/exports/4",
+        "animated scenes are not supported yet",
+    );
+    assert_eq!(diagnostics.len(), 4);
     assert!(files(dir.path()).is_empty());
 }
 
 #[test]
 fn same_id_in_different_collections_does_not_conflict() {
-    // Panels are not rendered yet; the plan keys collisions by collection.
-    let ws = worksheet(json!([sprite("hero")]), None);
-    let plan = export::plan(&ws, &options(Path::new("out"))).unwrap();
-    assert_eq!(plan.outputs[0].path, "sprites/hero.png");
+    let doc = json!({
+        "palettes": [{ "id": "p", "colors": [{ "char": "r", "rgba": [255, 0, 0] }] }],
+        "sprites": [{ "id": "hero", "_palette": "p", "lines": ["r"] }],
+        "panels": [{ "id": "hero", "width": 2, "height": 2,
+            "elements": [{ "_sprite": "hero", "coordinates": [1, 1] }] }]
+    });
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&ws, &options(dir.path())).unwrap();
+    assert_eq!(
+        files(dir.path()),
+        ["manifest.json", "panels/hero.png", "sprites/hero.png"]
+    );
+}
+
+#[test]
+fn composited_panel_gets_the_expected_palette() {
+    // Half green over red gives a new opaque color, (127, 128, 0).
+    let ws = compositions(Some(json!(["/panels/stage"])));
+    let image = export::image(
+        &ws,
+        &export::plan(&ws, &options(Path::new("out")))
+            .unwrap()
+            .outputs[0],
+        1,
+    );
+    assert_eq!(
+        encode::choose(&image),
+        Encoding::Indexed {
+            palette: vec![
+                TRANSPARENT,
+                Rgba([127, 128, 0, 255]),
+                Rgba([255, 0, 0, 255])
+            ],
+            transparent: 1,
+            bit_depth: 2,
+        }
+    );
+}
+
+#[test]
+fn many_blended_colors_give_rgba() {
+    // 17 opaque reds by column under 17 half-transparent greens by row:
+    // 289 distinct blended colors from 34 palette entries.
+    let reds: Vec<char> = ('a'..='q').collect();
+    let greens: Vec<char> = ('A'..='Q').collect();
+    let mut colors = Vec::new();
+    for (i, c) in reds.iter().enumerate() {
+        colors.push(json!({ "char": c.to_string(), "rgba": [i * 15, 0, 0] }));
+    }
+    for (i, c) in greens.iter().enumerate() {
+        colors.push(json!({ "char": c.to_string(), "rgba": [0, i * 15, 0, 0.5] }));
+    }
+    let row: String = reds.iter().collect();
+    let columns: Vec<String> = greens.iter().map(|c| c.to_string().repeat(17)).collect();
+    let doc = json!({
+        "palettes": [{ "id": "p", "colors": colors }],
+        "sprites": [
+            { "id": "reds", "_palette": "p", "lines": vec![row; 17] },
+            { "id": "greens", "_palette": "p", "lines": columns }
+        ],
+        "panels": [{ "id": "mix", "width": 17, "height": 17, "elements": [
+            { "_sprite": "reds", "coordinates": [0, 0] },
+            { "_sprite": "greens", "coordinates": [0, 0] }
+        ] }],
+        "exports": ["/panels/mix"]
+    });
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&ws, &options(dir.path())).unwrap();
+    let png = std::fs::read(dir.path().join("panels/mix.png")).unwrap();
+    assert_eq!(images::header(&png), (17, 17, 8, 6));
 }
 
 #[test]

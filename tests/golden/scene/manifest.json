@@ -1,0 +1,47 @@
+{
+  "format": "png",
+  "scale": 1,
+  "safeBuild": false,
+  "files": {
+    "/panels/actors": {
+      "path": "panels/actors.png",
+      "width": 16,
+      "height": 10
+    },
+    "/panels/backdrop": {
+      "path": "panels/backdrop.png",
+      "width": 16,
+      "height": 10
+    },
+    "/scenes/clearing": {
+      "path": "scenes/clearing.png",
+      "width": 16,
+      "height": 10
+    },
+    "/sprites/fog": {
+      "path": "sprites/fog.png",
+      "width": 8,
+      "height": 2
+    },
+    "/sprites/ground": {
+      "path": "sprites/ground.png",
+      "width": 4,
+      "height": 1
+    },
+    "/sprites/moon": {
+      "path": "sprites/moon.png",
+      "width": 4,
+      "height": 4
+    },
+    "/sprites/sky": {
+      "path": "sprites/sky.png",
+      "width": 4,
+      "height": 2
+    },
+    "/sprites/slime": {
+      "path": "sprites/slime.png",
+      "width": 4,
+      "height": 5
+    }
+  }
+}

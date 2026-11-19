@@ -239,3 +239,54 @@ fn render_notice_for_implicitly_skipped_resources() {
         "{stderr}"
     );
 }
+
+#[test]
+fn render_max_image_size_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = worksheet_file(dir.path(), SHEET);
+    for value in ["1048576", "512MiB", "2gib", "none"] {
+        cli()
+            .arg("render")
+            .arg(&sheet)
+            .arg("-o")
+            .arg(dir.path().join("ok"))
+            .args(["--max-image-size", value])
+            .assert()
+            .code(0);
+    }
+    for value in ["0", "1GB", "1.5GiB", "big", "-1"] {
+        cli()
+            .arg("render")
+            .arg(&sheet)
+            .arg("-o")
+            .arg(dir.path().join("bad"))
+            .args(["--max-image-size", value])
+            .assert()
+            .code(2);
+    }
+    assert!(!dir.path().join("bad").exists());
+}
+
+#[test]
+fn render_over_the_size_limit_is_an_invalid_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = worksheet_file(dir.path(), SHEET);
+    let out = dir.path().join("out");
+    let output = cli()
+        .arg("render")
+        .arg(&sheet)
+        .arg("-o")
+        .arg(&out)
+        .args(["--max-image-size", "15"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr
+            .contains("/sprites/0: sprite \"hero\" is 2x2 (16 B), over the 15 B image size limit"),
+        "{stderr}"
+    );
+    assert!(!out.exists());
+}

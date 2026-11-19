@@ -1,0 +1,1112 @@
+# A masked ball, 256x256, drawn for pixel-perfect.
+#
+#   pixel-perfect render examples/masquerade.yaml -o out --scale 3
+#
+# Built to use the whole format:
+# - palettes: derived palettes dress the same dancers in other colors and
+#   turn the white marble tile into the dark one;
+# - sprites: derived sprites, and `overrideLines` for a taller plume and a
+#   full-face mask;
+# - transforms: `scale` stretches one row of fluting into a column, one
+#   pixel into chains, doubles the middle chandelier and squashes floor rows
+#   for perspective; `flip` mirrors curtains, capitals and dancers; `rotate`
+#   turns confetti; `crop` cuts a half moon out of the full one;
+# - panels: elements placed by `coordinates` and ordered by `zIndex`, one
+#   hidden element;
+# - scene: the `wallpaper` band is one panel used as nine layers;
+# - semi-transparent glow, light pools and moonbeam blended over the hall.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  # Architecture and light. Semi-transparent entries blend with what is below.
+  - id: hall
+    colors:
+      - { char: "d", rgba: [78, 16, 36] }  # wall
+      - { char: "D", rgba: [112, 30, 52] }  # damask
+      - { char: "y", rgba: [196, 150, 58] }  # gold
+      - { char: "Y", rgba: [244, 206, 104] }  # gold light
+      - { char: "o", rgba: [112, 72, 30] }  # gold shade
+      - { char: "p", rgba: [226, 220, 210] }  # marble
+      - { char: "P", rgba: [176, 166, 158] }  # marble shade
+      - { char: "q", rgba: [118, 108, 104] }  # marble dark
+      - { char: "f", rgba: [52, 34, 30] }  # window frame
+      - { char: "n", rgba: [16, 22, 56] }  # night
+      - { char: "N", rgba: [32, 42, 92] }  # night high
+      - { char: "*", rgba: [250, 240, 200] }  # star
+      - { char: "x", rgba: [78, 96, 150] }  # glass glint
+      - { char: "u", rgba: [242, 238, 208] }  # moon
+      - { char: "U", rgba: [196, 192, 168] }  # moon shade
+      - { char: "R", rgba: [150, 22, 34] }  # curtain
+      - { char: "Q", rgba: [98, 12, 24] }  # curtain fold
+      - { char: "c", rgba: [250, 244, 226] }  # candle
+      - { char: "a", rgba: [255, 196, 70] }  # flame
+      - { char: "j", rgba: [196, 228, 255] }  # crystal
+      - { char: "A", rgba: [255, 214, 130, 0.12] }  # halo outer
+      - { char: "H", rgba: [255, 220, 150, 0.22] }  # halo inner
+      - { char: "L", rgba: [255, 222, 160, 0.16] }  # light pool
+      - { char: "m", rgba: [170, 190, 255, 0.1] }  # moonbeam
+  # Floor tiles; `marble-dark` swaps the two colors for the dark squares.
+  - id: marble
+    colors:
+      - { char: "W", rgba: [226, 222, 214] }  # tile
+      - { char: "Z", rgba: [186, 180, 176] }  # vein
+  - id: marble-dark
+    _palette: marble
+    colors:
+      - { char: "W", rgba: [44, 36, 50] }
+      - { char: "Z", rgba: [82, 70, 92] }
+  # Crimson gown, dark hair, white mask. The others derive from it.
+  - id: lady
+    colors:
+      - { char: "h", rgba: [40, 26, 22] }  # hair
+      - { char: "s", rgba: [238, 196, 164] }  # skin
+      - { char: "r", rgba: [196, 48, 64] }  # lips
+      - { char: "M", rgba: [232, 196, 90] }  # mask trim
+      - { char: "m", rgba: [250, 246, 236] }  # mask
+      - { char: "E", rgba: [20, 16, 24] }  # eyes
+      - { char: "j", rgba: [120, 220, 240] }  # jewel
+      - { char: "w", rgba: [250, 248, 240] }  # gloves
+      - { char: "F", rgba: [250, 250, 250] }  # feather
+      - { char: "g", rgba: [176, 22, 40] }  # gown
+      - { char: "G", rgba: [112, 10, 26] }  # gown shade
+      - { char: "l", rgba: [232, 82, 96] }  # gown light
+  - id: lady-sapphire
+    _palette: lady
+    colors:
+      - { char: "h", rgba: [238, 206, 120] }
+      - { char: "M", rgba: [200, 210, 230] }
+      - { char: "m", rgba: [40, 60, 140] }
+      - { char: "F", rgba: [120, 170, 255] }
+      - { char: "g", rgba: [36, 70, 170] }
+      - { char: "G", rgba: [20, 36, 100] }
+      - { char: "l", rgba: [96, 140, 236] }
+  - id: lady-emerald
+    _palette: lady
+    colors:
+      - { char: "h", rgba: [150, 60, 30] }
+      - { char: "m", rgba: [20, 20, 24] }
+      - { char: "F", rgba: [60, 200, 120] }
+      - { char: "g", rgba: [20, 130, 80] }
+      - { char: "G", rgba: [10, 72, 46] }
+      - { char: "l", rgba: [80, 200, 140] }
+  - id: lady-gold
+    _palette: lady
+    colors:
+      - { char: "h", rgba: [14, 12, 16] }
+      - { char: "M", rgba: [20, 20, 24] }
+      - { char: "m", rgba: [200, 40, 60] }
+      - { char: "F", rgba: [255, 120, 40] }
+      - { char: "g", rgba: [220, 170, 50] }
+      - { char: "G", rgba: [150, 104, 24] }
+      - { char: "l", rgba: [255, 222, 120] }
+  - id: lady-violet
+    _palette: lady
+    colors:
+      - { char: "h", rgba: [226, 226, 236] }
+      - { char: "m", rgba: [60, 20, 70] }
+      - { char: "F", rgba: [200, 120, 255] }
+      - { char: "g", rgba: [110, 40, 150] }
+      - { char: "G", rgba: [62, 18, 90] }
+      - { char: "l", rgba: [170, 100, 220] }
+  # Black tailcoat, crimson waistcoat, white mask.
+  - id: gent
+    colors:
+      - { char: "h", rgba: [52, 34, 24] }  # hair
+      - { char: "s", rgba: [232, 190, 156] }  # skin
+      - { char: "r", rgba: [150, 70, 70] }  # mouth
+      - { char: "M", rgba: [232, 196, 90] }  # mask trim
+      - { char: "m", rgba: [250, 246, 236] }  # mask
+      - { char: "E", rgba: [20, 16, 24] }  # eyes
+      - { char: "c", rgba: [24, 22, 30] }  # coat
+      - { char: "C", rgba: [60, 58, 74] }  # coat light
+      - { char: "w", rgba: [246, 244, 236] }  # shirt
+      - { char: "b", rgba: [176, 22, 40] }  # bow tie
+      - { char: "v", rgba: [176, 22, 40] }  # waistcoat
+      - { char: "t", rgba: [30, 28, 36] }  # trousers
+      - { char: "k", rgba: [10, 8, 12] }  # shoes
+  - id: gent-teal
+    _palette: gent
+    colors:
+      - { char: "m", rgba: [30, 110, 120] }
+      - { char: "M", rgba: [200, 210, 230] }
+      - { char: "b", rgba: [30, 140, 150] }
+      - { char: "v", rgba: [30, 140, 150] }
+  - id: gent-plum
+    _palette: gent
+    colors:
+      - { char: "c", rgba: [64, 22, 60] }
+      - { char: "C", rgba: [110, 50, 104] }
+      - { char: "h", rgba: [200, 180, 150] }
+      - { char: "m", rgba: [20, 20, 24] }
+      - { char: "b", rgba: [232, 196, 90] }
+      - { char: "v", rgba: [232, 196, 90] }
+  - id: gent-gold
+    _palette: gent
+    colors:
+      - { char: "m", rgba: [232, 196, 90] }
+      - { char: "M", rgba: [150, 104, 24] }
+      - { char: "b", rgba: [20, 20, 24] }
+      - { char: "v", rgba: [220, 170, 50] }
+  # Confetti; variants swap the paper color.
+  - id: confetti
+    colors:
+      - { char: "x", rgba: [255, 90, 130] }  # paper
+  - id: confetti-gold
+    _palette: confetti
+    colors:
+      - { char: "x", rgba: [255, 210, 80] }
+  - id: confetti-cyan
+    _palette: confetti
+    colors:
+      - { char: "x", rgba: [90, 220, 255] }
+  - id: confetti-white
+    _palette: confetti
+    colors:
+      - { char: "x", rgba: [250, 250, 250] }
+
+sprites:
+  # Wall tile; the `wallpaper` panel repeats it, the scene repeats the panel.
+  - id: damask
+    _palette: hall
+    lines:
+      - "dddddddddddddddd"
+      - "dddddddDDddddddd"
+      - "ddddddDddDdddddd"
+      - "dddddDddddDddddd"
+      - "ddddDddddddDdddd"
+      - "dddDddddddddDddd"
+      - "ddDddddDDddddDdd"
+      - "dDddddDyyDddddDd"
+      - "dDddddDyyDddddDd"
+      - "ddDddddDDddddDdd"
+      - "dddDddddddddDddd"
+      - "ddddDddddddDdddd"
+      - "dddddDddddDddddd"
+      - "ddddddDddDdddddd"
+      - "dddddddDDddddddd"
+      - "dddddddddddddddd"
+  - id: cornice
+    _palette: hall
+    lines:
+      - "oooooooooooooooo"
+      - "YYYYYYYYYYYYYYYY"
+      - "yyyyyyyyyyyyyyyy"
+      - "oooooooooooooooo"
+      - "yyoyyyoyyyoyyyoy"
+      - "yyoyyyoyyyoyyyoy"
+      - "oooooooooooooooo"
+      - "YyYyYyYyYyYyYyYy"
+      - "yyyyyyyyyyyyyyyy"
+      - "oooooooooooooooo"
+      - "dodododododododo"
+      - "dddddddddddddddd"
+  - id: baseboard
+    _palette: hall
+    lines:
+      - "oooooooooooooooo"
+      - "yyyyyyyyyyyyyyyy"
+      - "oyyyoyyyoyyyoyyy"
+      - "oooooooooooooooo"
+  - id: window
+    _palette: hall
+    lines:
+      - "................................"
+      - "..........ffffffffffff.........."
+      - "........ffffffffffffffff........"
+      - ".......ffffNNNNffNNNNffff......."
+      - ".....ffffNNNNNNffNNNNNNffff....."
+      - "....fffNNNNNNNNffNNNNNNNNfff...."
+      - "....ffNNNNNNNNNffNNNNNNNNNff...."
+      - "...ffNNNNNNNNNNffNNNNNNNNNNff..."
+      - "..fffNNNN*NNNNNffNNNNNNNNNNfff.."
+      - "..ffxNNNNNNNNNNffNN*NNNNNNNxff.."
+      - ".ffNNxNNNNNNNNNffNNNNN*NNN*Nxff."
+      - ".ffNNxNNNNNNNNNffNNNNN*NNNN*xff."
+      - ".ffNNNxNNNNNNNNffNNNNNNNNNN**ff."
+      - "ffNNNNxNNNNNNNNffNNNNNNNNNNNNxff"
+      - "ffNNNNNxNNNNNNNffNNNNNNNNNN*NNff"
+      - "ffNNNNNxNNNNNNNffNNNNNNNNNNN*Nff"
+      - "ffN*NNNNxNNNNNNffNNNNNNNNNNNNNff"
+      - "ffNNNNNNxNNNNNNffNNNNNNNNNNNNNff"
+      - "ffNNNNNNNxNNNNNffNN*NN*NNNNNNNff"
+      - "ffNNNNNNNxNNNNNffNNNNNNNNNNNNNff"
+      - "ffNNNNNNNNxNNNNffNNNNNNNN*N*NNff"
+      - "ffNNNNNNNNxNNNNffNNNNNNNNNNNNNff"
+      - "ffNNNNNNNNNxNNNffNNNNN*NNNNN*Nff"
+      - "ffNNN*NNNNNxNNNffNNNNNNNNNNNNNff"
+      - "ffNNNNNNNNNNx*NffNNNNNNNN*NNNNff"
+      - "ffNNNNNNNNNNxNNffNNNNNNNNNNN*Nff"
+      - "ffNNNNNNNNNNNxNffN*NNNNNNNNNNNff"
+      - "ffNNNNNNNNN**xNffNNNNNN*NNNNNNff"
+      - "ffNNNnNNNNnNNNxffNNNnNNNNnNNNNff"
+      - "ffNNNnnNNNnnNNxffNNNnnNNNnnNNNff"
+      - "ffnNNnnnNNnnnNNffnNNnnnNNnnnNNff"
+      - "ffnnNnnnnN**nnNffn*NnnnnNnnnnNff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnnn*nnnff"
+      - "ffnnnnnnnn*nnnnffnnn*nnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffxnnnnnnnnnnnnff"
+      - "ffnnnnn*nnnnn*nffxnnnnnnnnnnnnff"
+      - "ffnnnn*nnnn*nnnffnxnnnnnnnnn*nff"
+      - "ffnnn*nnnnnnnnnffnxnnnnnnnnnnnff"
+      - "ffnnn*nnnnnnnnnffnnxnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnxnnnnnnnnnnff"
+      - "ffffffffffffffffffffffffffffffff"
+      - "ffffffffffffffffffffffffffffffff"
+      - "ffnnnnnnnnnnnnnffnnnnxnnnn*nnnff"
+      - "ffnnnnnnnnnnnnnffnnnnxnnnnnnnnff"
+      - "ffn*nnnnnnn*nnnffnnnnnxnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnxnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnn*nxnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnxnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnxnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnxnnnnnff"
+      - "ffxnnnnnn**nnnnffnnnn**nnxnnnnff"
+      - "ffxnnnnnnnnnnnnffn*nnnnnnxnnnnff"
+      - "ffnxnnnn*nnnnnnffnnnnnnnnnx*nnff"
+      - "ffnxnnnnnnnnnnnffnnnnnnnnnxn*nff"
+      - "ffnnxnnnnnnnnnnffnnnnnnnnnnxnnff"
+      - "ffnnx*nnnn*nnnnffnnnnnnnnnnxnnff"
+      - "ffnn*xnnnnnnnnnffnnn*nnnnnnnxnff"
+      - "ffn*nxnnnnnnnnnffn*nnn*nnnnnxnff"
+      - "ffnnnnxnnnnnnnnffnnnnnnnn*nnnxff"
+      - "ffnnnnxnnnnnnnnffnnnnnnnnnnnnxff"
+      - "ffnnnnnxnnnnnnnffnnnnnnnnnnnnnff"
+      - "ffn*nnnxnnnnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnxnnnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnxnnnnnnffnnnnnnnnnn*nnff"
+      - "ffnnnnnnnxnnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnxnnn*nffnnnnnnnnnnnnnff"
+      - "ffnnnn**nnxnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnnxnnnnffnnnnnn*nnnnnnff"
+      - "ffffffffffffffffffffffffffffffff"
+      - "ffffffffffffffffffffffffffffffff"
+      - "ffnnnnn*nnnnxnnffnn*nnnnnnnnnnff"
+      - "ffnnnnnnnnnnxnnffnnnnnnnnnnnn*ff"
+      - "ffnnnnnnnnnnnxnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnxnffnnnn*nnnnnnnnff"
+      - "ffnn**nnnnnn*nxffnnnnnnnnnnnnnff"
+      - "ffnnn**nnnnnnnxffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnnnn*nnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnn**nnnnnffnnnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffxnnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffxnnnnnnnnnn*nff"
+      - "ffnnnnnnnnnnnnnffnxnnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnxnnnnnnnnnnnff"
+      - "ffnnnnnn*nnn*nnffnnxnnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnxnnnn*nnnnnff"
+      - "ffnnnnn*nnnnnnnffnnnxnnnnnnnn*ff"
+      - "ffnnnnnn*nnn*nnffnnnxnnnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnxnnnnnnnnff"
+      - "ffnnnnnnnnnnnn*ffnnnnxnnnn*nnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnxnnnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnx*nnnnnnff"
+      - "ffnnnnnnnnnnnnnffnnnnnnxnnnnnnff"
+      - "ffnnnnnnn*nnnnnffnnnnnnxnnnnnnff"
+      - "ffffffffffffffffffffffffffffffff"
+      - "ffffffffffffffffffffffffffffffff"
+  # Full moon; the left window shows a half moon cut from it with `crop`.
+  - id: moon
+    _palette: hall
+    lines:
+      - ".....uu....."
+      - "...uuuuuu..."
+      - "..uuuuuuuu.."
+      - ".uuuuuuUuuu."
+      - ".uuuuuUuuuu."
+      - "uuuuuUuuuuuu"
+      - "uuuuUuuuuUuu"
+      - ".uuUuuuuUuu."
+      - ".uuuuuuUuuu."
+      - "..uuuuUuuu.."
+      - "...uuuuuu..."
+      - ".....uu....."
+  # Left curtain; the right one is the same sprite flipped on x.
+  - id: curtain
+    _palette: hall
+    lines:
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "QRRQRRQRRQ"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "yyyyyy...."
+      - "yyyyyy...."
+      - "yyyyyy...."
+      - "yyyyyy...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRR...."
+      - "QRRQRRQ..."
+      - "QRRQRRQ..."
+      - "QRRQRRQ..."
+      - "QRRQRRQ..."
+      - "QRRQRRQ..."
+      - "QRRQRRQ..."
+      - "QRRQRRQR.."
+      - "QRRQRRQR.."
+      - "QRRQRRQR.."
+      - "QRRQRRQR.."
+      - "QRRQRRQR.."
+      - "QRRQRRQR.."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQ."
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RRQRRQRRQR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+      - "RQRRQRRQRR"
+  # Top of a column; the base is the same sprite flipped on y.
+  - id: capital
+    _palette: hall
+    lines:
+      - "qPPPPPPPPPPPPq"
+      - "PppppppppppppP"
+      - ".qPPPPPPPPPPq."
+      - "..oyyyyyyyyo.."
+      - "..pPpPpPpPpP.."
+      - "..qqqqqqqqqq.."
+      - "...PppppppP..."
+      - "...qPpPpPpq..."
+  # One row of fluting, stretched into a whole column with `scale`.
+  - id: shaft
+    _palette: hall
+    lines:
+      - "...qPpPpPpq..."
+  # One pixel, stretched into chains of any length.
+  - id: chain
+    _palette: hall
+    lines:
+      - "o"
+  - id: chandelier
+    _palette: hall
+    lines:
+      - "...........Yy..........."
+      - "..........yYYy.........."
+      - "...a.......yy.......a..."
+      - "...c...a...yy...a...c..."
+      - "...c...c...yy...c...c..."
+      - "..yyy..c...yy...c..yyy.."
+      - "...oyyyyy.yYYy.yyyyyo..."
+      - "......oyyyyYYyyyyo......"
+      - "........oyyYYyyo........"
+      - "..........oYYo.........."
+      - "...........jj..........."
+      - "...........jj..........."
+      - "...........j............"
+  # Candle glow: two semi-transparent rings.
+  - id: halo
+    _palette: hall
+    lines:
+      - "........................................"
+      - "..............AAAAAAAAAAAA.............."
+      - "...........AAAAAAAAAAAAAAAAAA..........."
+      - "..........AAAAAAAAAAAAAAAAAAAA.........."
+      - "........AAAAAAAAAAAAAAAAAAAAAAAA........"
+      - ".......AAAAAAAAAAAAAAAAAAAAAAAAAA......."
+      - "......AAAAAAAAAAAAAAAAAAAAAAAAAAAA......"
+      - ".....AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA....."
+      - "....AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...."
+      - "....AAAAAAAAAAAAAHHHHHHAAAAAAAAAAAAA...."
+      - "...AAAAAAAAAAAHHHHHHHHHHHHAAAAAAAAAAA..."
+      - "..AAAAAAAAAAAHHHHHHHHHHHHHHAAAAAAAAAAA.."
+      - "..AAAAAAAAAAHHHHHHHHHHHHHHHHAAAAAAAAAA.."
+      - "..AAAAAAAAAHHHHHHHHHHHHHHHHHHAAAAAAAAA.."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAHHHHHHHHHHHHHHHHHHHHHHAAAAAAAA."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - ".AAAAAAAAAHHHHHHHHHHHHHHHHHHHHAAAAAAAAA."
+      - "..AAAAAAAAAHHHHHHHHHHHHHHHHHHAAAAAAAAA.."
+      - "..AAAAAAAAAAHHHHHHHHHHHHHHHHAAAAAAAAAA.."
+      - "..AAAAAAAAAAAHHHHHHHHHHHHHHAAAAAAAAAAA.."
+      - "...AAAAAAAAAAAHHHHHHHHHHHHAAAAAAAAAAA..."
+      - "....AAAAAAAAAAAAAHHHHHHAAAAAAAAAAAAA...."
+      - "....AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...."
+      - ".....AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA....."
+      - "......AAAAAAAAAAAAAAAAAAAAAAAAAAAA......"
+      - ".......AAAAAAAAAAAAAAAAAAAAAAAAAA......."
+      - "........AAAAAAAAAAAAAAAAAAAAAAAA........"
+      - "..........AAAAAAAAAAAAAAAAAAAA.........."
+      - "...........AAAAAAAAAAAAAAAAAA..........."
+      - "..............AAAAAAAAAAAA.............."
+      - "........................................"
+  - id: light-pool
+    _palette: hall
+    lines:
+      - "....................LLLLLLLLLLLLLLLLLLLLLLLL...................."
+      - "............LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL............"
+      - ".......LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL......."
+      - "....LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL...."
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.."
+      - ".LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL."
+      - "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
+      - "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
+      - ".LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL."
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.."
+      - "....LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL...."
+      - ".......LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL......."
+      - "............LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL............"
+      - "....................LLLLLLLLLLLLLLLLLLLLLLLL...................."
+  # Light from the middle window, slanting across the floor.
+  - id: moonbeam
+    _palette: hall
+    lines:
+      - "mmmmmmmmmmmmmmmmmmmmmm.........................................."
+      - ".mmmmmmmmmmmmmmmmmmmmmm........................................."
+      - ".mmmmmmmmmmmmmmmmmmmmmm........................................."
+      - "..mmmmmmmmmmmmmmmmmmmmmm........................................"
+      - "..mmmmmmmmmmmmmmmmmmmmmm........................................"
+      - "...mmmmmmmmmmmmmmmmmmmmmm......................................."
+      - "...mmmmmmmmmmmmmmmmmmmmmm......................................."
+      - "....mmmmmmmmmmmmmmmmmmmmmm......................................"
+      - "....mmmmmmmmmmmmmmmmmmmmmm......................................"
+      - ".....mmmmmmmmmmmmmmmmmmmmmm....................................."
+      - ".....mmmmmmmmmmmmmmmmmmmmmm....................................."
+      - ".....mmmmmmmmmmmmmmmmmmmmmm....................................."
+      - "......mmmmmmmmmmmmmmmmmmmmmm...................................."
+      - "......mmmmmmmmmmmmmmmmmmmmmm...................................."
+      - ".......mmmmmmmmmmmmmmmmmmmmmm..................................."
+      - ".......mmmmmmmmmmmmmmmmmmmmmm..................................."
+      - "........mmmmmmmmmmmmmmmmmmmmmm.................................."
+      - "........mmmmmmmmmmmmmmmmmmmmmm.................................."
+      - ".........mmmmmmmmmmmmmmmmmmmmmm................................."
+      - ".........mmmmmmmmmmmmmmmmmmmmmm................................."
+      - ".........mmmmmmmmmmmmmmmmmmmmmm................................."
+      - "..........mmmmmmmmmmmmmmmmmmmmmm................................"
+      - "..........mmmmmmmmmmmmmmmmmmmmmm................................"
+      - "...........mmmmmmmmmmmmmmmmmmmmmm..............................."
+      - "...........mmmmmmmmmmmmmmmmmmmmmm..............................."
+      - "............mmmmmmmmmmmmmmmmmmmmmm.............................."
+      - "............mmmmmmmmmmmmmmmmmmmmmm.............................."
+      - ".............mmmmmmmmmmmmmmmmmmmmmm............................."
+      - ".............mmmmmmmmmmmmmmmmmmmmmm............................."
+      - "..............mmmmmmmmmmmmmmmmmmmmmm............................"
+      - "..............mmmmmmmmmmmmmmmmmmmmmm............................"
+      - "..............mmmmmmmmmmmmmmmmmmmmmm............................"
+      - "...............mmmmmmmmmmmmmmmmmmmmmm..........................."
+      - "...............mmmmmmmmmmmmmmmmmmmmmm..........................."
+      - "................mmmmmmmmmmmmmmmmmmmmmm.........................."
+      - "................mmmmmmmmmmmmmmmmmmmmmm.........................."
+      - ".................mmmmmmmmmmmmmmmmmmmmmm........................."
+      - ".................mmmmmmmmmmmmmmmmmmmmmm........................."
+      - "..................mmmmmmmmmmmmmmmmmmmmmm........................"
+      - "..................mmmmmmmmmmmmmmmmmmmmmm........................"
+      - "..................mmmmmmmmmmmmmmmmmmmmmm........................"
+      - "...................mmmmmmmmmmmmmmmmmmmmmm......................."
+      - "...................mmmmmmmmmmmmmmmmmmmmmm......................."
+      - "....................mmmmmmmmmmmmmmmmmmmmmm......................"
+      - "....................mmmmmmmmmmmmmmmmmmmmmm......................"
+      - ".....................mmmmmmmmmmmmmmmmmmmmmm....................."
+      - ".....................mmmmmmmmmmmmmmmmmmmmmm....................."
+      - "......................mmmmmmmmmmmmmmmmmmmmmm...................."
+      - "......................mmmmmmmmmmmmmmmmmmmmmm...................."
+      - ".......................mmmmmmmmmmmmmmmmmmmmmm..................."
+      - ".......................mmmmmmmmmmmmmmmmmmmmmm..................."
+      - ".......................mmmmmmmmmmmmmmmmmmmmmm..................."
+      - "........................mmmmmmmmmmmmmmmmmmmmmm.................."
+      - "........................mmmmmmmmmmmmmmmmmmmmmm.................."
+      - ".........................mmmmmmmmmmmmmmmmmmmmmm................."
+      - ".........................mmmmmmmmmmmmmmmmmmmmmm................."
+      - "..........................mmmmmmmmmmmmmmmmmmmmmm................"
+      - "..........................mmmmmmmmmmmmmmmmmmmmmm................"
+      - "...........................mmmmmmmmmmmmmmmmmmmmmm..............."
+      - "...........................mmmmmmmmmmmmmmmmmmmmmm..............."
+      - "...........................mmmmmmmmmmmmmmmmmmmmmm..............."
+      - "............................mmmmmmmmmmmmmmmmmmmmmm.............."
+      - "............................mmmmmmmmmmmmmmmmmmmmmm.............."
+      - ".............................mmmmmmmmmmmmmmmmmmmmmm............."
+      - ".............................mmmmmmmmmmmmmmmmmmmmmm............."
+      - "..............................mmmmmmmmmmmmmmmmmmmmmm............"
+      - "..............................mmmmmmmmmmmmmmmmmmmmmm............"
+      - "...............................mmmmmmmmmmmmmmmmmmmmmm..........."
+      - "...............................mmmmmmmmmmmmmmmmmmmmmm..........."
+      - "................................mmmmmmmmmmmmmmmmmmmmmm.........."
+      - "................................mmmmmmmmmmmmmmmmmmmmmm.........."
+      - "................................mmmmmmmmmmmmmmmmmmmmmm.........."
+      - ".................................mmmmmmmmmmmmmmmmmmmmmm........."
+      - ".................................mmmmmmmmmmmmmmmmmmmmmm........."
+      - "..................................mmmmmmmmmmmmmmmmmmmmmm........"
+      - "..................................mmmmmmmmmmmmmmmmmmmmmm........"
+      - "...................................mmmmmmmmmmmmmmmmmmmmmm......."
+      - "...................................mmmmmmmmmmmmmmmmmmmmmm......."
+      - "....................................mmmmmmmmmmmmmmmmmmmmmm......"
+      - "....................................mmmmmmmmmmmmmmmmmmmmmm......"
+      - "....................................mmmmmmmmmmmmmmmmmmmmmm......"
+      - ".....................................mmmmmmmmmmmmmmmmmmmmmm....."
+      - ".....................................mmmmmmmmmmmmmmmmmmmmmm....."
+      - "......................................mmmmmmmmmmmmmmmmmmmmmm...."
+      - "......................................mmmmmmmmmmmmmmmmmmmmmm...."
+      - ".......................................mmmmmmmmmmmmmmmmmmmmmm..."
+      - ".......................................mmmmmmmmmmmmmmmmmmmmmm..."
+      - "........................................mmmmmmmmmmmmmmmmmmmmmm.."
+      - "........................................mmmmmmmmmmmmmmmmmmmmmm.."
+      - ".........................................mmmmmmmmmmmmmmmmmmmmmm."
+      - ".........................................mmmmmmmmmmmmmmmmmmmmmm."
+      - ".........................................mmmmmmmmmmmmmmmmmmmmmm."
+      - "..........................................mmmmmmmmmmmmmmmmmmmmmm"
+      - "..........................................mmmmmmmmmmmmmmmmmmmmmm"
+      - "...........................................mmmmmmmmmmmmmmmmmmmmm"
+      - "...........................................mmmmmmmmmmmmmmmmmmmmm"
+  # Marble tile. Rows nearer the back are squashed with `scale` for perspective.
+  - id: tile
+    _palette: marble
+    lines:
+      - "WWWZZWWWWWWWWWWW"
+      - "WWWWZZWWWWWWWWWW"
+      - "WWWWWZZWWWWWWWWW"
+      - "WWWWWWZZWWWWWWWW"
+      - "WWWWWWWZZWWWWWWW"
+      - "WWWWWWWWZZWWWWWW"
+      - "WWWWWWWWWZZWWWWZ"
+      - "WWWWWWWWWWZZWWZW"
+      - "WWWWWWWWWWWZZZWW"
+      - "WWWWWWWWWWWWZZWW"
+      - "WWWWWWWWWWWZWZZW"
+      - "WWWWWWWWWWZWWWWW"
+      - "WWWWWWWWWZWWWWWW"
+      - "WWWWWWWWZWWWWWWW"
+      - "WWWWWWWZWWWWWWWW"
+      - "WWWWWWZWWWWWWWWW"
+  - id: tile-dark
+    _sprite: tile
+    _palette: marble-dark
+  # Masked lady. Every other lady derives from her.
+  - id: lady
+    _palette: lady
+    lines:
+      - "..........FF...."
+      - ".........FF....."
+      - "......hhhhF....."
+      - ".....hhhhhhh...."
+      - ".....hssssshh..."
+      - "....MmmmmmmmM..."
+      - "....hmEmmmEmh..."
+      - ".....sssssss...."
+      - ".....sssrsss...."
+      - "......sssss....."
+      - ".......ss......."
+      - ".....sjjjjs....."
+      - "....sgggggggs..."
+      - "...s.gglgggg.s.."
+      - "...s.gglgggg.s.."
+      - "...w.ggglggg.w.."
+      - "....wGgglgggGw.."
+      - ".....GgglgggG..."
+      - "....GggglggggG.."
+      - "....GggglggggG.."
+      - "...GgggglggggGG."
+      - "...GgggglgggggG."
+      - "..GGggggglgggggG"
+      - "..GgggggglgggggG"
+      - "..GgggggglggggGG"
+      - ".GGgggggglgggggG"
+      - ".GgggggggglggggG"
+      - ".GggggggggllgggG"
+      - "GGgggggggggllggG"
+      - "GgggggggggggllgG"
+      - "GGGgggggggggggGG"
+      - ".GGGGGGGGGGGGGG."
+  - id: lady-sapphire
+    _sprite: lady
+    _palette: lady-sapphire
+  - id: lady-emerald
+    _sprite: lady
+    _palette: lady-emerald
+  - id: lady-gold
+    _sprite: lady
+    _palette: lady-gold
+  - id: lady-violet
+    _sprite: lady
+    _palette: lady-violet
+  # A taller plume, changing only the first three lines.
+  - id: lady-plume
+    _sprite: lady
+    _palette: lady-gold
+    overrideLines:
+      "0": "........FFFF...."
+      "1": ".......FF=FF...."
+      "2": "......hhhFF....."
+  # Masked gentleman. Variants swap colors or the mask.
+  - id: gent
+    _palette: gent
+    lines:
+      - "................"
+      - "................"
+      - "......hhhh......"
+      - ".....hhhhhh....."
+      - ".....hsssss....."
+      - "....MmmmmmmM...."
+      - "....MmEmmEmM...."
+      - ".....ssssss....."
+      - ".....sssrss....."
+      - "......ssss......"
+      - ".....cwwwwc....."
+      - "....cccwbwccc..."
+      - "...cccvwwvccc..."
+      - "...cccvvvvccc..."
+      - "...ccCvvvvCcc..."
+      - "...ccCvvvvCcc..."
+      - "...wcCvvvvCcw..."
+      - "....cCvvvvCc...."
+      - "....cCccccCc...."
+      - "....cccccccc...."
+      - "...cttt..tttc..."
+      - "...cttt..tttc..."
+      - "...cttt..tttc..."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "....ttt..ttt...."
+      - "...kkkk..kkkk..."
+      - "................"
+  - id: gent-teal
+    _sprite: gent
+    _palette: gent-teal
+  - id: gent-plum
+    _sprite: gent
+    _palette: gent-plum
+  - id: gent-gold
+    _sprite: gent
+    _palette: gent-gold
+  # A full-face Venetian mask: lines 7 and 8 replaced.
+  - id: gent-bauta
+    _sprite: gent
+    _palette: gent-gold
+    overrideLines:
+      "7": ".....mmmmmm....."
+      "8": "......mmmm......"
+  - id: confetti
+    _palette: confetti
+    lines:
+      - "xx"
+  - id: confetti-gold
+    _sprite: confetti
+    _palette: confetti-gold
+  - id: confetti-cyan
+    _sprite: confetti
+    _palette: confetti-cyan
+  - id: confetti-white
+    _sprite: confetti
+    _palette: confetti-white
+
+panels:
+  # One band of wallpaper. The scene stacks it nine times.
+  - id: wallpaper
+    width: 256
+    height: 16
+    elements:
+      - { _sprite: damask, coordinates: [0, 0] }
+      - { _sprite: damask, coordinates: [16, 0] }
+      - { _sprite: damask, coordinates: [32, 0] }
+      - { _sprite: damask, coordinates: [48, 0] }
+      - { _sprite: damask, coordinates: [64, 0] }
+      - { _sprite: damask, coordinates: [80, 0] }
+      - { _sprite: damask, coordinates: [96, 0] }
+      - { _sprite: damask, coordinates: [112, 0] }
+      - { _sprite: damask, coordinates: [128, 0] }
+      - { _sprite: damask, coordinates: [144, 0] }
+      - { _sprite: damask, coordinates: [160, 0] }
+      - { _sprite: damask, coordinates: [176, 0] }
+      - { _sprite: damask, coordinates: [192, 0] }
+      - { _sprite: damask, coordinates: [208, 0] }
+      - { _sprite: damask, coordinates: [224, 0] }
+      - { _sprite: damask, coordinates: [240, 0] }
+  - id: ceiling
+    width: 256
+    height: 12
+    elements:
+      - { _sprite: cornice, coordinates: [0, 0] }
+      - { _sprite: cornice, coordinates: [16, 0] }
+      - { _sprite: cornice, coordinates: [32, 0] }
+      - { _sprite: cornice, coordinates: [48, 0] }
+      - { _sprite: cornice, coordinates: [64, 0] }
+      - { _sprite: cornice, coordinates: [80, 0] }
+      - { _sprite: cornice, coordinates: [96, 0] }
+      - { _sprite: cornice, coordinates: [112, 0] }
+      - { _sprite: cornice, coordinates: [128, 0] }
+      - { _sprite: cornice, coordinates: [144, 0] }
+      - { _sprite: cornice, coordinates: [160, 0] }
+      - { _sprite: cornice, coordinates: [176, 0] }
+      - { _sprite: cornice, coordinates: [192, 0] }
+      - { _sprite: cornice, coordinates: [208, 0] }
+      - { _sprite: cornice, coordinates: [224, 0] }
+      - { _sprite: cornice, coordinates: [240, 0] }
+  # Windows, curtains and columns over the wallpaper.
+  - id: windows
+    width: 256
+    height: 156
+    elements:
+      - { _sprite: window, coordinates: [32, 28] }
+      - { _sprite: curtain, coordinates: [22, 22], zIndex: 2 }
+      - { _sprite: curtain, coordinates: [64, 22], zIndex: 2, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: window, coordinates: [112, 28] }
+      - { _sprite: curtain, coordinates: [102, 22], zIndex: 2 }
+      - { _sprite: curtain, coordinates: [144, 22], zIndex: 2, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: window, coordinates: [192, 28] }
+      - { _sprite: curtain, coordinates: [182, 22], zIndex: 2 }
+      - { _sprite: curtain, coordinates: [224, 22], zIndex: 2, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: moon, coordinates: [209, 48], zIndex: 1 }
+      - { _sprite: moon, coordinates: [37, 48], zIndex: 1, transforms: [{ kind: crop, area: [0, 0, 6, 12] }] }
+      - { _sprite: capital, coordinates: [0, 12], zIndex: 3 }
+      - { _sprite: shaft, coordinates: [0, 20], zIndex: 3, transforms: [{ kind: scale, width: 14, height: 128 }] }
+      - { _sprite: capital, coordinates: [0, 148], zIndex: 3, transforms: [{ kind: flip, axis: y }] }
+      - { _sprite: capital, coordinates: [81, 12], zIndex: 3 }
+      - { _sprite: shaft, coordinates: [81, 20], zIndex: 3, transforms: [{ kind: scale, width: 14, height: 128 }] }
+      - { _sprite: capital, coordinates: [81, 148], zIndex: 3, transforms: [{ kind: flip, axis: y }] }
+      - { _sprite: capital, coordinates: [161, 12], zIndex: 3 }
+      - { _sprite: shaft, coordinates: [161, 20], zIndex: 3, transforms: [{ kind: scale, width: 14, height: 128 }] }
+      - { _sprite: capital, coordinates: [161, 148], zIndex: 3, transforms: [{ kind: flip, axis: y }] }
+      - { _sprite: capital, coordinates: [242, 12], zIndex: 3 }
+      - { _sprite: shaft, coordinates: [242, 20], zIndex: 3, transforms: [{ kind: scale, width: 14, height: 128 }] }
+      - { _sprite: capital, coordinates: [242, 148], zIndex: 3, transforms: [{ kind: flip, axis: y }] }
+  # Checkered marble; rows grow toward the viewer.
+  - id: floor
+    width: 256
+    height: 100
+    elements:
+      - { _sprite: baseboard, coordinates: [0, 0] }
+      - { _sprite: baseboard, coordinates: [16, 0] }
+      - { _sprite: baseboard, coordinates: [32, 0] }
+      - { _sprite: baseboard, coordinates: [48, 0] }
+      - { _sprite: baseboard, coordinates: [64, 0] }
+      - { _sprite: baseboard, coordinates: [80, 0] }
+      - { _sprite: baseboard, coordinates: [96, 0] }
+      - { _sprite: baseboard, coordinates: [112, 0] }
+      - { _sprite: baseboard, coordinates: [128, 0] }
+      - { _sprite: baseboard, coordinates: [144, 0] }
+      - { _sprite: baseboard, coordinates: [160, 0] }
+      - { _sprite: baseboard, coordinates: [176, 0] }
+      - { _sprite: baseboard, coordinates: [192, 0] }
+      - { _sprite: baseboard, coordinates: [208, 0] }
+      - { _sprite: baseboard, coordinates: [224, 0] }
+      - { _sprite: baseboard, coordinates: [240, 0] }
+      - { _sprite: tile, coordinates: [0, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [16, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [32, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [48, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [64, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [80, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [96, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [112, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [128, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [144, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [160, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [176, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [192, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [208, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile, coordinates: [224, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [240, 4], transforms: [{ kind: scale, width: 16, height: 8 }] }
+      - { _sprite: tile-dark, coordinates: [0, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [16, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [32, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [48, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [64, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [80, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [96, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [112, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [128, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [144, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [160, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [176, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [192, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [208, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile-dark, coordinates: [224, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [240, 12], transforms: [{ kind: scale, width: 16, height: 10 }] }
+      - { _sprite: tile, coordinates: [0, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [16, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [32, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [48, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [64, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [80, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [96, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [112, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [128, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [144, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [160, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [176, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [192, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [208, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile, coordinates: [224, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [240, 22], transforms: [{ kind: scale, width: 16, height: 12 }] }
+      - { _sprite: tile-dark, coordinates: [0, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [16, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [32, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [48, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [64, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [80, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [96, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [112, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [128, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [144, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [160, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [176, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [192, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [208, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile-dark, coordinates: [224, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [240, 34], transforms: [{ kind: scale, width: 16, height: 14 }] }
+      - { _sprite: tile, coordinates: [0, 48] }
+      - { _sprite: tile-dark, coordinates: [16, 48] }
+      - { _sprite: tile, coordinates: [32, 48] }
+      - { _sprite: tile-dark, coordinates: [48, 48] }
+      - { _sprite: tile, coordinates: [64, 48] }
+      - { _sprite: tile-dark, coordinates: [80, 48] }
+      - { _sprite: tile, coordinates: [96, 48] }
+      - { _sprite: tile-dark, coordinates: [112, 48] }
+      - { _sprite: tile, coordinates: [128, 48] }
+      - { _sprite: tile-dark, coordinates: [144, 48] }
+      - { _sprite: tile, coordinates: [160, 48] }
+      - { _sprite: tile-dark, coordinates: [176, 48] }
+      - { _sprite: tile, coordinates: [192, 48] }
+      - { _sprite: tile-dark, coordinates: [208, 48] }
+      - { _sprite: tile, coordinates: [224, 48] }
+      - { _sprite: tile-dark, coordinates: [240, 48] }
+      - { _sprite: tile-dark, coordinates: [0, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [16, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [32, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [48, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [64, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [80, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [96, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [112, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [128, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [144, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [160, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [176, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [192, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [208, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [224, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [240, 64], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [0, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [16, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [32, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [48, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [64, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [80, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [96, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [112, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [128, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [144, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [160, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [176, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [192, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [208, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile, coordinates: [224, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+      - { _sprite: tile-dark, coordinates: [240, 82], transforms: [{ kind: scale, width: 16, height: 18 }] }
+  # Semi-transparent light on the floor.
+  - id: lights
+    width: 256
+    height: 140
+    elements:
+      - { _sprite: moonbeam, coordinates: [108, 44] }
+      - { _sprite: light-pool, coordinates: [16, 46] }
+      - { _sprite: light-pool, coordinates: [96, 54] }
+      - { _sprite: light-pool, coordinates: [176, 46] }
+  # The middle chandelier is the same sprite doubled with `scale`.
+  - id: chandeliers
+    width: 256
+    height: 110
+    elements:
+      - { _sprite: halo, coordinates: [28, 22] }
+      - { _sprite: chain, coordinates: [48, 12], transforms: [{ kind: scale, width: 1, height: 18 }] }
+      - { _sprite: chandelier, coordinates: [36, 30], zIndex: 1 }
+      - { _sprite: halo, coordinates: [88, 26], transforms: [{ kind: scale, width: 80, height: 80 }] }
+      - { _sprite: chain, coordinates: [127, 12], transforms: [{ kind: scale, width: 2, height: 30 }] }
+      - { _sprite: chandelier, coordinates: [104, 40], zIndex: 1, transforms: [{ kind: scale, width: 48, height: 26 }] }
+      - { _sprite: halo, coordinates: [188, 22] }
+      - { _sprite: chain, coordinates: [208, 12], transforms: [{ kind: scale, width: 1, height: 18 }] }
+      - { _sprite: chandelier, coordinates: [196, 30], zIndex: 1 }
+  # Seven couples; `zIndex` is the feet height, so nearer couples cover farther ones.
+  # The hidden `latecomer` is not drawn (an animation could reveal her).
+  - id: dancers
+    width: 256
+    height: 110
+    elements:
+      - { _sprite: lady-sapphire, coordinates: [18, 28], zIndex: 60 }
+      - { _sprite: gent-plum, coordinates: [30, 29], zIndex: 60, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: gent-bauta, coordinates: [86, 31], zIndex: 62 }
+      - { _sprite: lady-emerald, coordinates: [98, 30], zIndex: 62, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: lady-violet, coordinates: [150, 26], zIndex: 58 }
+      - { _sprite: gent, coordinates: [162, 27], zIndex: 58, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: gent-teal, coordinates: [214, 30], zIndex: 61 }
+      - { _sprite: lady, coordinates: [226, 29], zIndex: 61, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: gent-teal, coordinates: [40, 73], zIndex: 104 }
+      - { _sprite: lady-plume, coordinates: [52, 72], zIndex: 104, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: lady-gold, coordinates: [120, 76], zIndex: 108 }
+      - { _sprite: gent, coordinates: [132, 77], zIndex: 108, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: gent-gold, coordinates: [192, 71], zIndex: 102 }
+      - { _sprite: lady-sapphire, coordinates: [204, 70], zIndex: 102, transforms: [{ kind: flip, axis: x }] }
+      - { id: latecomer, _sprite: lady, coordinates: [0, 0], visible: false }
+  # Falling confetti; every third piece is rotated by 90 degrees.
+  - id: confetti
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: confetti, coordinates: [86, 71], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-gold, coordinates: [205, 197] }
+      - { _sprite: confetti-cyan, coordinates: [101, 183] }
+      - { _sprite: confetti-white, coordinates: [80, 117], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti, coordinates: [141, 147] }
+      - { _sprite: confetti-gold, coordinates: [209, 107] }
+      - { _sprite: confetti-cyan, coordinates: [115, 217], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-white, coordinates: [100, 218] }
+      - { _sprite: confetti, coordinates: [63, 92] }
+      - { _sprite: confetti-gold, coordinates: [214, 154], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-cyan, coordinates: [86, 225] }
+      - { _sprite: confetti-white, coordinates: [218, 132] }
+      - { _sprite: confetti, coordinates: [249, 153], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-gold, coordinates: [56, 179] }
+      - { _sprite: confetti-cyan, coordinates: [232, 72] }
+      - { _sprite: confetti-white, coordinates: [10, 82], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti, coordinates: [69, 214] }
+      - { _sprite: confetti-gold, coordinates: [233, 197] }
+      - { _sprite: confetti-cyan, coordinates: [80, 207], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-white, coordinates: [202, 149] }
+      - { _sprite: confetti, coordinates: [141, 228] }
+      - { _sprite: confetti-gold, coordinates: [115, 202], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-cyan, coordinates: [215, 202] }
+      - { _sprite: confetti-white, coordinates: [190, 245] }
+      - { _sprite: confetti, coordinates: [114, 169], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-gold, coordinates: [122, 161] }
+      - { _sprite: confetti-cyan, coordinates: [14, 222] }
+      - { _sprite: confetti-white, coordinates: [177, 159], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti, coordinates: [119, 72] }
+      - { _sprite: confetti-gold, coordinates: [177, 87] }
+      - { _sprite: confetti-cyan, coordinates: [138, 128], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-white, coordinates: [29, 174] }
+      - { _sprite: confetti, coordinates: [99, 198] }
+      - { _sprite: confetti-gold, coordinates: [106, 236], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-cyan, coordinates: [147, 216] }
+      - { _sprite: confetti-white, coordinates: [43, 118] }
+      - { _sprite: confetti, coordinates: [250, 177], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-gold, coordinates: [128, 172] }
+      - { _sprite: confetti-cyan, coordinates: [116, 229] }
+      - { _sprite: confetti-white, coordinates: [234, 220], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti, coordinates: [91, 247] }
+      - { _sprite: confetti-gold, coordinates: [139, 93] }
+      - { _sprite: confetti-cyan, coordinates: [47, 162], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-white, coordinates: [85, 163] }
+      - { _sprite: confetti, coordinates: [23, 149] }
+      - { _sprite: confetti-gold, coordinates: [135, 114], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-cyan, coordinates: [32, 237] }
+      - { _sprite: confetti-white, coordinates: [232, 145] }
+      - { _sprite: confetti, coordinates: [180, 157], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-gold, coordinates: [214, 200] }
+      - { _sprite: confetti-cyan, coordinates: [231, 177] }
+      - { _sprite: confetti-white, coordinates: [165, 110], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti, coordinates: [138, 144] }
+      - { _sprite: confetti-gold, coordinates: [212, 200] }
+      - { _sprite: confetti-cyan, coordinates: [57, 199], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-white, coordinates: [232, 118] }
+      - { _sprite: confetti, coordinates: [109, 116] }
+      - { _sprite: confetti-gold, coordinates: [19, 231], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: confetti-cyan, coordinates: [148, 224] }
+      - { _sprite: confetti-white, coordinates: [31, 160] }
+
+scenes:
+  - id: masquerade
+    width: 256
+    height: 256
+    layers:
+      - { _panel: wallpaper, coordinates: [0, 12], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 28], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 44], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 60], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 76], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 92], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 108], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 124], zIndex: 0 }
+      - { _panel: wallpaper, coordinates: [0, 140], zIndex: 0 }
+      - { _panel: ceiling, coordinates: [0, 0], zIndex: 1 }
+      - { _panel: windows, coordinates: [0, 0], zIndex: 2 }
+      - { _panel: floor, coordinates: [0, 156], zIndex: 3 }
+      - { _panel: lights, coordinates: [0, 116], zIndex: 4 }
+      - { _panel: chandeliers, coordinates: [0, 0], zIndex: 5 }
+      - { _panel: dancers, coordinates: [0, 146], zIndex: 6 }
+      - { _panel: confetti, coordinates: [0, 0], zIndex: 7 }
+
+exports: ["/scenes/masquerade"]

@@ -5,10 +5,12 @@
 //! types, and [`semantic`] enforces the remaining rules and resolves
 //! inheritance (via [`resolve`]).
 //!
-//! Output pipeline: [`render`] rasterizes resources into [`raster::Image`]s,
+//! Output pipeline: [`render`] rasterizes resources into [`raster::Image`]s
+//! (composing panels and scenes with [`compose`]),
 //! [`encode`] turns final images into PNG, and [`export`] plans file names,
 //! writes the files and the manifest.
 
+pub mod compose;
 pub mod encode;
 pub mod error;
 pub mod export;

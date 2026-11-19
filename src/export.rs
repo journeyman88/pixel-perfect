@@ -4,25 +4,89 @@
 //! all errors without touching the disk; [`write`] renders and writes only a
 //! clean plan, so an invalid request never leaves a half-written output.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b, Digest, digest::consts::U8};
 use serde::Serialize;
 
 use crate::error::Diagnostic;
-use crate::raster::Image;
+use crate::model::ElementSource;
+use crate::raster::{self, Image};
 use crate::semantic::ResolvedWorksheet;
-use crate::{encode, render};
+use crate::{compose, encode, render};
 
 /// Collections that can be exported, in worksheet order.
 const COLLECTIONS: [&str; 5] = ["sprites", "flipbooks", "panels", "timelines", "scenes"];
 
-/// Collections this version can render.
-const SUPPORTED: [&str; 1] = ["sprites"];
-
 /// Largest image side a PNG can store.
 const MAX_SIDE: u64 = i32::MAX as u64;
+
+/// Default of `--max-image-size`: 1 GiB of RGBA8 pixels.
+pub const DEFAULT_MAX_IMAGE_SIZE: u64 = 1 << 30;
+
+const UNITS: [(&str, u64); 4] = [
+    ("TiB", 1 << 40),
+    ("GiB", 1 << 30),
+    ("MiB", 1 << 20),
+    ("KiB", 1 << 10),
+];
+
+/// Parses a `--max-image-size` value: a positive number of bytes, optionally
+/// followed by `KiB`, `MiB`, `GiB` or `TiB` (any case), or `none` (no limit).
+pub fn parse_size(text: &str) -> Result<Option<u64>, String> {
+    if text.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    let lower = text.to_ascii_lowercase();
+    let (digits, factor) = UNITS
+        .iter()
+        .find_map(|(unit, factor)| {
+            lower
+                .strip_suffix(&unit.to_ascii_lowercase())
+                .map(|d| (d, *factor))
+        })
+        .unwrap_or((&lower, 1));
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        let decimal = ["kb", "mb", "gb", "tb"].iter().any(|u| {
+            lower
+                .strip_suffix(u)
+                .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+        });
+        return Err(if decimal {
+            format!("{text:?}: use binary units (KiB, MiB, GiB, TiB)")
+        } else {
+            format!(
+                "{text:?}: expected a number of bytes, optionally with KiB, MiB, GiB or TiB, or \"none\""
+            )
+        });
+    }
+    let n: u64 = digits
+        .parse()
+        .map_err(|_| format!("{text:?} is too large"))?;
+    if n == 0 {
+        return Err("the size must be greater than 0".to_owned());
+    }
+    n.checked_mul(factor)
+        .map(Some)
+        .ok_or_else(|| format!("{text:?} is too large"))
+}
+
+/// A byte count in the largest binary unit that keeps it at least 1, e.g.
+/// `1 GiB` or `1.49 GiB`.
+pub fn human_size(bytes: u128) -> String {
+    for (unit, factor) in UNITS {
+        let factor = u128::from(factor);
+        if bytes >= factor {
+            return if bytes % factor == 0 {
+                format!("{} {unit}", bytes / factor)
+            } else {
+                format!("{:.2} {unit}", bytes as f64 / factor as f64)
+            };
+        }
+    }
+    format!("{bytes} B")
+}
 
 /// Output file format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +111,9 @@ pub struct RenderOptions {
     pub scale: u32,
     /// Name files by the hash of their id instead of the id.
     pub safe_build: bool,
+    /// Largest image, in bytes of RGBA8, the engine may build; `None` for no
+    /// limit. See [`DEFAULT_MAX_IMAGE_SIZE`].
+    pub max_image_size: Option<u64>,
 }
 
 /// One file to produce.
@@ -133,11 +200,20 @@ pub fn file_name_problem(id: &str) -> Option<&'static str> {
 
 /// Index of the resource `id` in `collection`, and its size before scaling.
 fn locate(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Option<(usize, (u32, u32))> {
+    let m = &ws.model;
     match collection {
         "sprites" => {
-            let i = ws.model.sprites.iter().position(|s| s.id == id)?;
+            let i = m.sprites.iter().position(|s| s.id == id)?;
             let s = ws.sprites.get(id)?;
             Some((i, (s.width(), s.height())))
+        }
+        "panels" => {
+            let i = m.panels.iter().position(|p| p.id == id)?;
+            Some((i, (m.panels[i].width, m.panels[i].height)))
+        }
+        "scenes" => {
+            let i = m.scenes.iter().position(|s| s.id == id)?;
+            Some((i, (m.scenes[i].width, m.scenes[i].height)))
         }
         _ => None,
     }
@@ -155,6 +231,97 @@ fn collection_ids<'a>(ws: &'a ResolvedWorksheet, collection: &str) -> Vec<&'a st
     }
 }
 
+/// Why the resource `id` of `collection` cannot be rendered by this version,
+/// if it cannot.
+fn unsupported(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Option<String> {
+    let animated = match collection {
+        "sprites" => false,
+        "panels" => compose::find_panel(ws, id).is_some_and(compose::is_animated_panel),
+        "scenes" => compose::find_scene(ws, id).is_some_and(|s| compose::is_animated_scene(ws, s)),
+        _ => return Some(format!("{collection} are not supported yet")),
+    };
+    animated.then(|| format!("animated {collection} are not supported yet"))
+}
+
+/// Checks the size of every image built to render a resource against the
+/// `--max-image-size` limit, reporting each offending pointer once.
+struct SizeCheck {
+    limit: u64,
+    diagnostics: Vec<Diagnostic>,
+    reported: HashSet<String>,
+}
+
+impl SizeCheck {
+    fn check(&mut self, pointer: String, what: &str, (w, h): (u64, u64)) {
+        let bytes = u128::from(w) * u128::from(h) * 4;
+        if bytes <= u128::from(self.limit) || !self.reported.insert(pointer.clone()) {
+            return;
+        }
+        self.diagnostics.push(Diagnostic::at(
+            pointer,
+            format!(
+                "{what} is {w}x{h} ({}), over the {} image size limit; raise it with --max-image-size",
+                human_size(bytes),
+                human_size(u128::from(self.limit)),
+            ),
+        ));
+    }
+
+    fn sprite(&mut self, ws: &ResolvedWorksheet, id: &str, pointer: String) -> (u32, u32) {
+        let s = &ws.sprites[id];
+        let size = (s.width(), s.height());
+        self.check(pointer, &format!("sprite {id:?}"), wide(size));
+        size
+    }
+
+    fn panel(&mut self, ws: &ResolvedWorksheet, index: usize) {
+        let panel = &ws.model.panels[index];
+        for (e, element) in panel.elements.iter().enumerate() {
+            let ElementSource::Sprite(sprite) = element.source() else {
+                continue; // hidden flipbooks are not drawn
+            };
+            if !element.visible {
+                continue;
+            }
+            let base = format!("/panels/{index}/elements/{e}");
+            let mut size = self.sprite(ws, sprite, base.clone());
+            for (t, transform) in element.transforms.iter().enumerate() {
+                size = raster::output_size(size, transform);
+                self.check(
+                    format!("{base}/transforms/{t}"),
+                    "the result of this transform",
+                    wide(size),
+                );
+            }
+        }
+        self.check(
+            format!("/panels/{index}"),
+            &format!("panel {:?}", panel.id),
+            wide((panel.width, panel.height)),
+        );
+    }
+
+    fn scene(&mut self, ws: &ResolvedWorksheet, index: usize) {
+        let scene = &ws.model.scenes[index];
+        for layer in &scene.layers {
+            if let Some(id) = &layer.panel
+                && let Some(p) = ws.model.panels.iter().position(|p| &p.id == id)
+            {
+                self.panel(ws, p);
+            }
+        }
+        self.check(
+            format!("/scenes/{index}"),
+            &format!("scene {:?}", scene.id),
+            wide((scene.width, scene.height)),
+        );
+    }
+}
+
+fn wide((w, h): (u32, u32)) -> (u64, u64) {
+    (w.into(), h.into())
+}
+
 /// Decides every output of a render, or returns every problem found.
 pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
@@ -169,25 +336,28 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
                 let Some(&collection) = COLLECTIONS.iter().find(|&&c| c == collection) else {
                     continue; // unreachable after validation
                 };
-                if SUPPORTED.contains(&collection) {
-                    selected.push((collection, id.to_owned()));
-                } else {
-                    diagnostics.push(Diagnostic::at(
+                match unsupported(ws, collection, id) {
+                    None => selected.push((collection, id.to_owned())),
+                    Some(reason) => diagnostics.push(Diagnostic::at(
                         format!("/exports/{i}"),
-                        format!("cannot export {pointer:?}: {collection} are not supported yet"),
-                    ));
+                        format!("cannot export {pointer:?}: {reason}"),
+                    )),
                 }
             }
         }
         None => {
             for collection in COLLECTIONS {
-                let ids = collection_ids(ws, collection);
-                if SUPPORTED.contains(&collection) {
-                    selected.extend(ids.into_iter().map(|id| (collection, id.to_owned())));
-                } else if !ids.is_empty() {
+                let mut skipped = Vec::new();
+                for id in collection_ids(ws, collection) {
+                    match unsupported(ws, collection, id) {
+                        None => selected.push((collection, id.to_owned())),
+                        Some(reason) => skipped.push(reason),
+                    }
+                }
+                if let Some(reason) = skipped.first() {
                     notices.push(format!(
-                        "skipped {} resource(s) in {collection}: {collection} are not supported yet",
-                        ids.len()
+                        "skipped {} resource(s) in {collection}: {reason}",
+                        skipped.len()
                     ));
                 }
             }
@@ -258,6 +428,36 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
         });
     }
 
+    if let Some(limit) = options.max_image_size {
+        let mut sizes = SizeCheck {
+            limit,
+            diagnostics: Vec::new(),
+            reported: HashSet::new(),
+        };
+        for output in &outputs {
+            let Some((index, (w, h))) = locate(ws, output.collection, &output.id) else {
+                continue;
+            };
+            match output.collection {
+                "sprites" => {
+                    sizes.sprite(ws, &output.id, format!("/sprites/{index}"));
+                }
+                "panels" => sizes.panel(ws, index),
+                "scenes" => sizes.scene(ws, index),
+                _ => {}
+            }
+            if options.scale > 1 {
+                let scale = u64::from(options.scale);
+                sizes.check(
+                    format!("/{}/{index}", output.collection),
+                    &format!("the image after --scale {}", options.scale),
+                    (u64::from(w) * scale, u64::from(h) * scale),
+                );
+            }
+        }
+        diagnostics.extend(sizes.diagnostics);
+    }
+
     if diagnostics.is_empty() {
         Ok(Plan { outputs, notices })
     } else {
@@ -267,11 +467,7 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
 
 /// Renders one planned output to its final image (after scaling).
 pub fn image(ws: &ResolvedWorksheet, output: &PlannedOutput, scale: u32) -> Image {
-    let image = match output.collection {
-        "sprites" => render::sprite(ws, &output.id),
-        other => unreachable!("{other} are not supported yet"),
-    };
-    image.upscale(scale)
+    render::resource(ws, output.collection, &output.id).upscale(scale)
 }
 
 /// Builds the manifest of a plan.

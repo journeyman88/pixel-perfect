@@ -37,7 +37,21 @@ enum Command {
         /// Name files by the BLAKE2b-64 hash of their id (any id works).
         #[arg(long)]
         safe_build: bool,
+        /// Largest image the engine may build, as RGBA8 bytes: a number with an
+        /// optional KiB/MiB/GiB/TiB suffix, or "none". A guard against
+        /// mistakes, not a memory budget.
+        #[arg(long, value_name = "SIZE", default_value = "1GiB", value_parser = parse_max_image_size)]
+        max_image_size: MaxImageSize,
     },
+}
+
+/// Parsed `--max-image-size`: `None` means no limit. A newtype, because clap
+/// would treat a bare `Option` as an optional argument.
+#[derive(Clone, Copy)]
+struct MaxImageSize(Option<u64>);
+
+fn parse_max_image_size(text: &str) -> Result<MaxImageSize, String> {
+    export::parse_size(text).map(MaxImageSize)
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -68,6 +82,7 @@ fn main() -> ExitCode {
             format,
             scale,
             safe_build,
+            max_image_size,
         } => {
             let options = RenderOptions {
                 output_path,
@@ -76,6 +91,7 @@ fn main() -> ExitCode {
                 },
                 scale,
                 safe_build,
+                max_image_size: max_image_size.0,
             };
             render(&worksheet, &options)
         }

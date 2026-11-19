@@ -19,8 +19,8 @@ context: |
 
   Output: PNG and APNG first; WebP (static and animated, lossless) later.
   Output format (--format), integer upscale (--scale N), output directory
-  (--output-path) and hashed file names (--safe-build) are CLI options, not
-  worksheet fields. CLI flags are kebab-case. Outputs go to
+  (--output-path), hashed file names (--safe-build) and the image size guard
+  (--max-image-size, default 1GiB) are CLI options, not worksheet fields. CLI flags are kebab-case. Outputs go to
   <output-path>/<collection>/<id|hash>.<format>, plus manifest.json.
 
   Stack: Rust (edition 2024, toolchain 1.95), single crate with a library

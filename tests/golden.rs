@@ -1,17 +1,18 @@
-//! Golden files: rendering `valid/full.json` (exports removed, so every sprite
-//! is exported) must reproduce the committed files byte for byte.
+//! Golden files: rendering fixtures with `exports` removed (so every supported
+//! resource is exported) must reproduce the committed files byte for byte.
 //!
 //! Regenerate after an intended change with:
 //! `UPDATE_GOLDEN=1 cargo test --test golden`
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use pixel_perfect::export::{self, OutputFormat, RenderOptions};
 
-fn render_to(dir: &Path, scale: u32, safe_build: bool) {
-    let mut doc = common::full();
+fn render_to(fixture: &str, dir: &Path, scale: u32, safe_build: bool) {
+    let text = std::fs::read_to_string(common::fixture(fixture)).unwrap();
+    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
     doc.as_object_mut().unwrap().remove("exports");
     let ws = common::load(doc);
     let options = RenderOptions {
@@ -19,48 +20,66 @@ fn render_to(dir: &Path, scale: u32, safe_build: bool) {
         format: OutputFormat::Png,
         scale,
         safe_build,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     export::render(&ws, &options).unwrap();
 }
 
-fn check(name: &str, scale: u32, safe_build: bool) {
+/// Files under `dir`, relative, sorted.
+fn tree(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_owned()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path.strip_prefix(dir).unwrap().to_owned());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn check(name: &str, fixture: &str, scale: u32, safe_build: bool, expected_files: usize) {
     let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/golden")
         .join(name);
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         let _ = std::fs::remove_dir_all(&golden);
-        render_to(&golden, scale, safe_build);
+        render_to(fixture, &golden, scale, safe_build);
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    render_to(dir.path(), scale, safe_build);
-    let mut compared = 0;
-    for sub in ["", "sprites"] {
-        for entry in std::fs::read_dir(golden.join(sub)).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                continue;
-            }
-            let relative = path.strip_prefix(&golden).unwrap();
-            let actual = std::fs::read(dir.path().join(relative))
-                .unwrap_or_else(|_| panic!("{} was not produced", relative.display()));
-            assert!(
-                actual == std::fs::read(&path).unwrap(),
-                "{} differs from golden",
-                relative.display()
-            );
-            compared += 1;
-        }
+    render_to(fixture, dir.path(), scale, safe_build);
+    let expected = tree(&golden);
+    assert_eq!(tree(dir.path()), expected, "produced files");
+    for relative in &expected {
+        assert!(
+            std::fs::read(dir.path().join(relative)).unwrap()
+                == std::fs::read(golden.join(relative)).unwrap(),
+            "{} differs from golden",
+            relative.display()
+        );
     }
-    assert_eq!(compared, 4, "manifest + 3 sprites");
+    assert_eq!(expected.len(), expected_files, "{name}");
 }
 
 #[test]
 fn full_fixture() {
-    check("full", 1, false);
+    // manifest + 3 sprites + the static panel `stage`
+    check("full", "valid/full.json", 1, false, 5);
 }
 
 #[test]
 fn full_fixture_scaled_safe_build() {
-    check("full-x4-safe", 4, true);
+    check("full-x4-safe", "valid/full.json", 4, true, 5);
+}
+
+#[test]
+fn scene_fixture() {
+    // manifest + 5 sprites + 2 panels + 1 scene
+    check("scene", "valid/scene.json", 1, false, 9);
 }

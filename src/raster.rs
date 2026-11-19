@@ -50,6 +50,20 @@ impl Image {
         Image::new(width, height, pixels)
     }
 
+    /// A fully transparent image.
+    pub fn transparent(width: u32, height: u32) -> Image {
+        Image::new(
+            width,
+            height,
+            vec![TRANSPARENT; width as usize * height as usize],
+        )
+    }
+
+    /// Mutable pixels, for compositing. Callers keep canonical transparency.
+    pub(crate) fn pixels_mut(&mut self) -> &mut [Rgba] {
+        &mut self.pixels
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -115,6 +129,21 @@ pub fn apply(image: &Image, transform: &Transform) -> Image {
             );
             Image::from_fn(cw, ch, |x, y| image.get(cx + x, cy + y))
         }
+    }
+}
+
+/// Size of the image produced by `transform` from an image of `size`,
+/// without building it. A `crop` gives its area size (bounds are validated
+/// when the worksheet is loaded).
+pub fn output_size(size: (u32, u32), transform: &Transform) -> (u32, u32) {
+    match *transform {
+        Transform::Flip { .. }
+        | Transform::Rotate {
+            degrees: Rotation::Deg180,
+        } => size,
+        Transform::Rotate { .. } => (size.1, size.0),
+        Transform::Scale { width, height } => (width, height),
+        Transform::Crop { area: [_, _, w, h] } => (w, h),
     }
 }
 

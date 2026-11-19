@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../schema/worksheet.schema.json",
+  "palettes": [
+    {
+      "id": "night",
+      "colors": [
+        { "char": "s", "rgba": [20, 24, 60] },
+        { "char": "S", "rgba": [40, 40, 90] },
+        { "char": "g", "rgba": [30, 70, 40] },
+        { "char": "m", "rgba": [240, 240, 210] },
+        { "char": "w", "rgba": [255, 255, 255, 0.3] },
+        { "char": "f", "rgba": [180, 200, 255, 0.45] },
+        { "char": "o", "rgba": [20, 70, 30] },
+        { "char": "b", "rgba": [80, 180, 70] },
+        { "char": "e", "rgba": [255, 255, 255] },
+        { "char": "d", "rgba": [0, 0, 0, 0.35] }
+      ]
+    }
+  ],
+  "sprites": [
+    { "id": "sky", "_palette": "night", "lines": ["ssss", "SSSS"] },
+    { "id": "ground", "_palette": "night", "lines": ["gggg"] },
+    { "id": "moon", "_palette": "night", "lines": [".mm.", "mmmw", "mmmw", ".mw."] },
+    { "id": "slime", "_palette": "night", "lines": [".oo.", "obbo", "ebeb", "oooo", "dddd"] },
+    { "id": "fog", "_palette": "night", "lines": ["ff.ff.ff", ".ff.ff.f"] }
+  ],
+  "panels": [
+    {
+      "id": "backdrop",
+      "width": 16,
+      "height": 10,
+      "elements": [
+        { "_sprite": "sky", "coordinates": [0, 0], "transforms": [{ "kind": "scale", "width": 16, "height": 8 }] },
+        { "_sprite": "ground", "coordinates": [0, 8], "transforms": [{ "kind": "scale", "width": 16, "height": 2 }] },
+        { "_sprite": "moon", "coordinates": [11, 1], "zIndex": 1 }
+      ]
+    },
+    {
+      "id": "actors",
+      "width": 16,
+      "height": 10,
+      "elements": [
+        { "_sprite": "slime", "coordinates": [2, 5] },
+        { "_sprite": "slime", "coordinates": [14, 5], "transforms": [{ "kind": "flip", "axis": "x" }] },
+        { "_sprite": "fog", "coordinates": [-2, 7], "zIndex": 1 },
+        { "_sprite": "fog", "coordinates": [6, 7], "zIndex": 1 }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "clearing",
+      "width": 16,
+      "height": 10,
+      "layers": [
+        { "_panel": "actors", "coordinates": [0, 0], "zIndex": 1 },
+        { "_panel": "backdrop", "coordinates": [0, 0] }
+      ]
+    }
+  ]
+}
