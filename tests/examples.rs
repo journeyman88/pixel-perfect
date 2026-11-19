@@ -94,6 +94,38 @@ fn masquerade_example_renders_its_scene() {
 }
 
 #[test]
+fn campfire_example_renders_its_animations() {
+    let ws = pixel_perfect::load_file(&example("campfire.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    assert!(plan.notices.is_empty());
+    assert_eq!(plan.outputs.len(), 3);
+    // (pointer, width, height, loop in seconds as num/den)
+    for (pointer, width, height, seconds) in [
+        ("/flipbooks/flames", 56, 74, (1, 1)),
+        ("/timelines/fire", 256, 256, (2, 1)),
+        ("/scenes/campfire", 256, 256, (2, 1)),
+    ] {
+        let entry = &manifest.files[pointer];
+        assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
+        let fraction = entry.loop_seconds.expect("animated");
+        assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
+        let png = std::fs::read(dir.path().join(&entry.path)).unwrap();
+        assert!(
+            images::chunks(&png).iter().any(|c| c == "acTL"),
+            "{pointer} is an APNG"
+        );
+    }
+}
+
+#[test]
 fn animation_example_renders_its_animations() {
     let ws = pixel_perfect::load_file(&example("animation.yaml")).unwrap();
     let dir = tempfile::tempdir().unwrap();

@@ -1,0 +1,2179 @@
+# A campfire in a forest clearing at night, 256x256, animated.
+#
+#   pixel-perfect render examples/campfire.yaml -o out --scale 3
+#
+# Writes three APNG files that loop forever:
+#
+# - flipbooks/flames.png (56x74): the fire alone, 10 fps, 1 s;
+# - timelines/fire.png (256x256): flames, embers, flickering light and
+#   rising sparks, 2 s;
+# - scenes/campfire.png (256x256): the whole picture. The 10 fps fire, the
+#   5 fps embers and the 4 fps twinkling stars share a 20 ticks-per-second
+#   clock, and the scene loops every 2 s.
+#
+# The scene is ten layers, from the farthest plane to the nearest: sky,
+# twinkling stars, mountains, two rows of distant forest, ground, the near
+# trees, the logs and stones, the fire, the stones in front of it and a
+# vignette. What it shows:
+#
+# - palettes: derived palettes give the distant mountains and the two rows
+#   of distant pines their hazier colors (aerial perspective), a hotter
+#   flame and a brighter glow;
+# - sprites: derived sprites change only the palette (`pines-far`,
+#   `pines-mid`, `mountain-far`, `flame-flash`) or only some lines
+#   (`flame-b` redraws the tips of `flame-a`, with `=` to keep a pixel);
+# - `tile`: the sky, both star fields, the dark cloud band, the two forest
+#   rows, the grass and its ragged edge are each one small tile repeated;
+#   the sky is a 2x160 dithered gradient tiled to the full width;
+# - `scale`: one row of bark stretched into the trunk, a mountain shrunk
+#   into the distant range, the middle row of pines enlarged before tiling;
+# - `flip`: the distant range, the tree on the right, branches, stones,
+#   firewood, the vignette corners, and a mirrored frame of the flames;
+# - `rotate`: standing stones, the vignette corner and edges, firewood;
+# - `crop`: a short log end cut from the fallen trunk, a patch of moss;
+# - flipbooks: the flames (6 frames, one of them flipped) and the embers,
+#   at different fps, both used as elements of a panel;
+# - timelines: `twinkle` hides and shows stars with `setVisible`; `fire`
+#   uses every transition: `moveTo` for the sparks, `setVisible` for sparks
+#   and the brighter glow (hidden in the panel), `moveToZ` to bring a spark
+#   from behind the flames to the front, `appendTransforms` and
+#   `resetTransforms` to mirror the flames for a moment, `seekFlipbook` to
+#   jump the flames to another frame;
+# - scene: panels and timelines stacked by `zIndex`;
+# - semi-transparent clouds, haze, firelight and vignette blended over the
+#   layers below.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  # Night sky. Semi-transparent clouds blend with the gradient.
+  - id: sky
+    colors:
+      - { char: "1", rgba: [10, 14, 34] }  # sky, top
+      - { char: "2", rgba: [16, 24, 52] }
+      - { char: "3", rgba: [22, 38, 72] }
+      - { char: "4", rgba: [30, 60, 96] }
+      - { char: "5", rgba: [46, 94, 120] }
+      - { char: "6", rgba: [76, 134, 146] }  # sky, horizon
+      - { char: "*", rgba: [240, 240, 220] }  # star
+      - { char: "+", rgba: [140, 152, 190] }  # dim star
+      - { char: "o", rgba: [236, 140, 70] }  # drifting ember
+      - { char: "C", rgba: [250, 200, 180, 0.6] }  # cloud, lit
+      - { char: "c", rgba: [220, 150, 150, 0.45] }  # cloud
+      - { char: "k", rgba: [12, 18, 40, 0.55] }  # dark cloud
+      - { char: "K", rgba: [12, 18, 40, 0.3] }  # dark cloud, fringe
+  - id: mountain
+    colors:
+      - { char: "m", rgba: [50, 70, 110] }
+      - { char: "M", rgba: [86, 96, 140] }  # lit face
+      - { char: "n", rgba: [36, 50, 84] }  # shadow face
+      - { char: "s", rgba: [196, 206, 230] }  # snow
+      - { char: "S", rgba: [236, 178, 160] }  # snow, lit
+      - { char: "i", rgba: [80, 124, 150, 0.1] }  # haze, thin
+      - { char: "j", rgba: [80, 124, 150, 0.2] }  # haze
+      - { char: "h", rgba: [80, 124, 150, 0.3] }  # haze, thick
+  # Farther away: less contrast, closer to the sky.
+  - id: mountain-far
+    _palette: mountain
+    colors:
+      - { char: "m", rgba: [64, 96, 130] }
+      - { char: "M", rgba: [96, 116, 156] }
+      - { char: "n", rgba: [54, 80, 114] }
+      - { char: "s", rgba: [160, 184, 212] }
+      - { char: "S", rgba: [206, 168, 168] }
+  - id: forest
+    colors:
+      - { char: "a", rgba: [12, 26, 28] }  # needles
+      - { char: "b", rgba: [20, 42, 38] }  # needles, light
+      - { char: "g", rgba: [36, 68, 50] }  # needles, highlight
+      - { char: "x", rgba: [6, 12, 14] }  # darkest
+      - { char: "t", rgba: [92, 50, 34] }  # bark
+      - { char: "T", rgba: [140, 80, 50] }  # bark, lit
+      - { char: "u", rgba: [184, 112, 64] }  # bark, firelit
+      - { char: "r", rgba: [52, 28, 22] }  # bark, shadow
+      - { char: "n", rgba: [30, 54, 32] }  # moss, shadow
+      - { char: "m", rgba: [52, 88, 42] }  # moss
+      - { char: "M", rgba: [98, 134, 58] }  # moss, lit
+  # The same pines, hazier with distance.
+  - id: pine-far
+    _palette: forest
+    colors:
+      - { char: "a", rgba: [32, 58, 78] }
+      - { char: "b", rgba: [40, 72, 90] }
+      - { char: "g", rgba: [54, 88, 104] }
+      - { char: "x", rgba: [26, 48, 66] }
+  - id: pine-mid
+    _palette: forest
+    colors:
+      - { char: "a", rgba: [20, 40, 50] }
+      - { char: "b", rgba: [28, 54, 60] }
+      - { char: "g", rgba: [40, 70, 70] }
+      - { char: "x", rgba: [14, 28, 36] }
+  # Clearing, stones and wood.
+  - id: camp
+    colors:
+      - { char: "h", rgba: [22, 44, 32] }  # grass, dark
+      - { char: "g", rgba: [38, 70, 40] }  # grass
+      - { char: "G", rgba: [70, 104, 50] }  # grass, light
+      - { char: "y", rgba: [138, 138, 60] }  # dry grass
+      - { char: "d", rgba: [108, 62, 42] }  # dirt
+      - { char: "D", rgba: [142, 86, 54] }  # dirt, light
+      - { char: "e", rgba: [80, 46, 36] }  # dirt, dark
+      - { char: "E", rgba: [176, 112, 66] }  # pebble
+      - { char: "p", rgba: [96, 100, 124] }  # stone
+      - { char: "P", rgba: [146, 148, 166] }  # stone, light
+      - { char: "q", rgba: [50, 52, 70] }  # stone, shadow
+      - { char: "l", rgba: [104, 58, 34] }  # wood
+      - { char: "L", rgba: [156, 92, 50] }  # wood, light
+      - { char: "w", rgba: [56, 30, 20] }  # wood, shadow
+      - { char: "R", rgba: [196, 140, 86] }  # sawn wood
+      - { char: "K", rgba: [70, 40, 28] }  # bark crack
+      - { char: "k", rgba: [34, 22, 18] }  # charcoal
+      - { char: "z", rgba: [6, 8, 14, 0.4] }  # shadow
+  - id: fire
+    colors:
+      - { char: "r", rgba: [196, 46, 24] }  # flame, edge
+      - { char: "o", rgba: [240, 116, 32] }  # flame
+      - { char: "y", rgba: [255, 194, 62] }  # flame, hot
+      - { char: "w", rgba: [255, 244, 196] }  # flame, core
+      - { char: "e", rgba: [255, 214, 110] }  # spark
+      - { char: "c", rgba: [118, 34, 20] }  # ember, dim
+      - { char: "k", rgba: [38, 22, 18] }  # ash
+  # A flare: every flame color one step hotter.
+  - id: fire-hot
+    _palette: fire
+    colors:
+      - { char: "r", rgba: [228, 82, 30] }
+      - { char: "o", rgba: [255, 158, 52] }
+      - { char: "y", rgba: [255, 228, 124] }
+  # Firelight: five rings, each a little stronger, so no edge shows.
+  - id: glow
+    colors:
+      - { char: "A", rgba: [255, 140, 50, 0.04] }
+      - { char: "B", rgba: [255, 145, 55, 0.08] }
+      - { char: "C", rgba: [255, 150, 60, 0.12] }
+      - { char: "D", rgba: [255, 160, 70, 0.17] }
+      - { char: "E", rgba: [255, 170, 80, 0.22] }
+  - id: glow-bright
+    _palette: glow
+    colors:
+      - { char: "A", rgba: [255, 150, 60, 0.06] }
+      - { char: "B", rgba: [255, 155, 65, 0.11] }
+      - { char: "C", rgba: [255, 160, 70, 0.17] }
+      - { char: "D", rgba: [255, 172, 84, 0.23] }
+      - { char: "E", rgba: [255, 184, 96, 0.3] }
+  # Vignette: ten steps of the same dark blue, stronger toward the edges.
+  - id: shade
+    colors:
+      - { char: "a", rgba: [6, 8, 18, 0.05] }
+      - { char: "b", rgba: [6, 8, 18, 0.1] }
+      - { char: "c", rgba: [6, 8, 18, 0.15] }
+      - { char: "d", rgba: [6, 8, 18, 0.2] }
+      - { char: "e", rgba: [6, 8, 18, 0.26] }
+      - { char: "f", rgba: [6, 8, 18, 0.32] }
+      - { char: "g", rgba: [6, 8, 18, 0.38] }
+      - { char: "h", rgba: [6, 8, 18, 0.45] }
+      - { char: "i", rgba: [6, 8, 18, 0.52] }
+      - { char: "j", rgba: [6, 8, 18, 0.6] }
+
+sprites:
+  # Dithered gradient, 2x160, widened to 256 with `tile`.
+  - id: sky
+    _palette: sky
+    lines:
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "21"
+      - "11"
+      - "21"
+      - "11"
+      - "21"
+      - "12"
+      - "21"
+      - "12"
+      - "22"
+      - "12"
+      - "22"
+      - "12"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "32"
+      - "22"
+      - "32"
+      - "22"
+      - "32"
+      - "23"
+      - "32"
+      - "23"
+      - "33"
+      - "23"
+      - "33"
+      - "23"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "43"
+      - "33"
+      - "43"
+      - "33"
+      - "43"
+      - "34"
+      - "43"
+      - "34"
+      - "44"
+      - "34"
+      - "44"
+      - "34"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "54"
+      - "44"
+      - "54"
+      - "44"
+      - "54"
+      - "45"
+      - "54"
+      - "45"
+      - "55"
+      - "45"
+      - "55"
+      - "45"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "65"
+      - "55"
+      - "65"
+      - "55"
+      - "65"
+      - "56"
+      - "65"
+      - "56"
+      - "66"
+      - "56"
+      - "66"
+      - "56"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+  # Star field tile, repeated over the sky.
+  - id: stars
+    _palette: sky
+    lines:
+      - "..........................................o....................."
+      - "....................................+..........................."
+      - "................................................................"
+      - "........*.................+....................................."
+      - ".................................................+.............."
+      - "..................*............................................."
+      - ".......................*........................................"
+      - "................................................................"
+      - "................................................................"
+      - "................................................................"
+      - "................................................................"
+      - "........................*......................................."
+      - "....*..........................................................."
+      - "+..............................................................."
+      - "................................................................"
+      - "................................................................"
+      - "................................................................"
+      - "................................................................"
+      - ".............+.................................................."
+      - "...........o.............................................*......"
+      - "................................+..............................."
+      - "..................................o............................."
+      - "................................................................"
+      - "................................................................"
+      - "............................................................+..."
+      - ".............+.................................................."
+      - "...................................+..............+............."
+      - "................................................................"
+      - ".........................................+........*........*...."
+      - "...+......+....................................................."
+      - "................................................................"
+      - ".....................................+.........................."
+      - ".............................+.................................."
+      - ".*.......................+......................................"
+      - "................................................................"
+      - ".........................................................*......"
+      - "........++......................................................"
+      - "................................................................"
+      - ".....*........................*................................."
+      - "....................*..........................................."
+      - ".............................+..............................*..."
+      - "................................................................"
+      - "+..............................................................."
+      - "..+......................o......................................"
+      - "................................................................"
+      - "..........+....................................................."
+      - "................................................................"
+      - "................................................................"
+  # A second, sparser tile with another period, so the repetition does not show.
+  - id: stars-dim
+    _palette: sky
+    lines:
+      - "........................................"
+      - "..........................+............."
+      - ".............o.........................."
+      - "......................o................."
+      - "........................................"
+      - "..................+....................."
+      - ".+......................................"
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - "........+..............................."
+      - "........................................"
+      - "+......................................."
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - ".+......................................"
+      - "........................................"
+      - "........................................"
+      - ".................................+......"
+      - ".....................................o.."
+      - "...........................+............"
+      - "........................................"
+      - "........................................"
+      - "................................+......."
+      - ".................+......................"
+      - ".......................................+"
+      - "........................................"
+      - ".....+.................................."
+      - "........................................"
+      - "........................................"
+      - "........................................"
+      - "........................................"
+  - id: star-bright
+    _palette: sky
+    lines:
+      - ".+."
+      - "+*+"
+      - ".+."
+  # A ragged band of dark cloud; it wraps, so it tiles.
+  - id: dark-clouds
+    _palette: sky
+    lines:
+      - "................................................................"
+      - "................................................................"
+      - ".....................KKK.......................KKKK............."
+      - "...................KKKKKK.....................KKKKKK............"
+      - "..................KKKkkkK.....................KkkkkKK..........."
+      - ".........KKKKK...KKkkkkkkK...................KkkkkkkKK....KKK..."
+      - ".........KKKKKKKKKkkkkkkkKK.................KKkkkkkkkKKKKKKKKKK."
+      - "........KkkkkkKKKkkkkkkkkkK........KK.......KkkkkkkkkkKKKKkkkKK."
+      - ".......KKkkkkkkkkkkkkkkkkkkK.....KKKKKK....KkkkkkkkkkkkkkkkkkkkK"
+      - "K.....KKkkkkkkkkkkkkkkkkkkkKKK.KKKKkkKKKKKKKkkkkkkkkkkkkkkkkkkkK"
+      - "KK...KKkkkkkkkkkkkkkkkkkkkkkKKKKKkkkkkkKKKKkkkkkkkkkkkkkkkkkkkkk"
+      - "kKKKKKkkkkkkkkkkkkkkkkkkkkkkkkKkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "kkKKKkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkKKkkkk"
+      - "kkkkkkkkkkkkkKKkkkkkkkkkkkkkkkkkkkkkkkkKKkkkkkkkkkkkkkkkkkKKKkkk"
+      - "kkkkkkkkkkkkKKKKkkkkkkkkkkkkkkkkkkkkkkKKKKkkkkkkkkkkkkkkkK..Kkkk"
+      - "kkkkkkkkkkkkK..KKkkkkKkkkkkkkkkkKKkkkkK..KKkkkkkkkkkkkkkkK...Kkk"
+      - "kkkkkkkkkkkK....KKKKKKKkkkkkkkkKKKKKKK....KkkkkkkkkkkkkkK....Kkk"
+      - "kkkkkkkkkkkK.....KKKK.KKkkkkkkKK..KKKK.....kkkkkkkkkkkkKK.....Kk"
+      - "kkKKKKkkkkk............KKkkkkkK............KkkkkkKKKKkKK......KK"
+      - "KKKKKKkkkkK.............KkkkkK.............KkkkkKKKKKKK........K"
+      - "KK....KkkKK..............KkkkK..............KkkKK....K.........."
+      - "......KKKK...............KkkK...............KKKK................"
+      - ".......KK.................KKK................KK................."
+  # Pink clouds lit by the last light behind the peaks.
+  - id: cloud
+    _palette: sky
+    lines:
+      - ".............................................."
+      - ".............................................."
+      - ".............................................."
+      - "...............CCCCC...CCCC..................."
+      - "......CCC...CCCCCCCCCCCCCCCC.................."
+      - "....CCCCCCCCCCCCCCCCCCCCCCCCCC................"
+      - "...CCCCCCCcccccccccccccccccccCCCC............."
+      - "...ccccccccccccccccccccccccccCCCCC............"
+      - "...cccccccc.ccccccccccccccccccccccc..........."
+      - "....cccccc.....cccccccccccccccccccc..........."
+      - "......ccc........cccccccccccccccccc..........."
+      - "..................cccccccccccccccc............"
+  - id: cloud-small
+    _palette: sky
+    lines:
+      - "............................"
+      - "............................"
+      - "............CCCC............"
+      - ".CCCCCC....CCCCCC..........."
+      - "CCCCCCCCC..cccccCC.........."
+      - "ccccccccc..ccccccc.........."
+      - "cccccccc...ccccccc.........."
+      - "............ccccc..........."
+  # Snowy peaks, lit from the left; the distant range is this sprite flipped and shrunk.
+  - id: mountain
+    _palette: mountain
+    lines:
+      - "......................................................................................................................................................"
+      - "......................................................................................................................................................"
+      - "......................................................................................................................................................"
+      - ".........................................................s............................................................................................"
+      - "........................................................SS.s.s........................................................................................"
+      - "....................................................SSS.SSssss........................................................................................"
+      - "...................................................SSSSSSSsssss......................................................................................."
+      - "...................................................SSSSSSSsssss......................................................................................."
+      - "..................................................SSSSSSSSSsssss......................................................................................"
+      - "..................................................SSSSSSSSSSssss......................................................................................"
+      - "..................................................SSSSSSSSSSSssss....................................................................................."
+      - ".................................................SSSSSSSSSSSSssssss..................................................................................."
+      - ".................................................SSSSSSSSSSSSSssssssss................................................................................"
+      - "................................................SSSSSSSSSSSSSSssssssssss.............................................................................."
+      - "................................................SSSSSSSSSSSSSSssssssssss.............................................................................."
+      - ".............................................SSSSSSSSSSSSMSMSSSssssssssss............................................................................."
+      - "...........................................SSSSSSSSSSSSSSMSMMMSSsssssssss............................................................................."
+      - "...........................................SSSSSSSSSSSSSMMMMMMSSsssssssss............................................................................."
+      - "..........................................SSSSSSSSSSMMSMMMMMMMMSSssssssss.s..........................................................................."
+      - ".........................................SSSSSSSSSSMMMSMMMMMMMMSssssssssssss.........................................................................."
+      - ".........................................SSSSSSSSSSMMMMSMMMMMMMMsssssssssssss..s......................................................................"
+      - "........................................SSSSSSSSSSMMMMMSMMMMMMMMMsssssssssssssss......................................................................"
+      - ".......................................SSSSSSSSSSSMMMMMMSMMMMMMMMSssssssssssssss......................................................................"
+      - "......................................SSSSSSSSSSSSMMMMMMSMMMMMMMMMMsssssssssssssss...................................................................."
+      - "..................................S.SSSSSSSSSSSSSMMMMMMMMSMMMMMMMMMnnnssssssssssss...................................................................."
+      - ".................................SSSSSSSSSSSSSSSSMMMMMMMMSMMMMMMMMMMnnnsssssssssss...................................................................."
+      - ".................................SSSSSSSSSSSSSSSMMMMMMMMSMMMMMMMMMMMnnnssssssssssss..................................................................."
+      - ".................................SSSSSSSSSSSSSMSMMMMMMMMSMMMMMMMMMMMMnnnssssssssssss.s................................................................"
+      - ".................................SSSSSSSSSSMSMMMMMMMMMMSMMMMMMMMMMMMnnnnssssssssssssss..s............................................................."
+      - "...............................SSSSSSSSSSSSMSMMMMMMMMMMSMMMMMMMMMMMMnnnnsssssssssssssssss............................................................."
+      - "...............................SSSSSSSSSSSMMMMMMMMMMMMMMSMMMMMMMMMMMnnnnnsnssssssssssssss..........................S.S................................"
+      - "...............................SSSSSSSSSSMMMMMMMMMMMMMMMSMMMMMMMMMMMnnnnnsnnsssssssssssss..........................SSs................................"
+      - "...............................SSSSSSSSSSMMMMMMMMMMMMMMMMSMMMMMMMMMMnnnnnnsnnssnsssssssssss.......................SSSS................................"
+      - "...........................S.SSSSSSSSSSSMMMMMMMMMMMMMMMMMSMMMMMMMMMMMnnnnnsnnnsnssssssssssss......................SSSsssssss.........................."
+      - ".........................S.SSSSSSSMSSSSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnsnnnnsnsssssssssss.....................SSSSsssssss........................."
+      - "........................SSSSSSSSSMMSMSSMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnsssssssssssss..................SSSSSsssssss........................."
+      - "........................SSSSSSSSSMMMMSMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnsssssssssssssS................SSSSSssssssss........................."
+      - "........................SSSSSSSMSMMMMSMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnsnnsssssssssSSS.............SSSSSSsssssssss........................"
+      - "........................SSSSSSSMMMMMMSSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnsnnssssssssSSSSS............SSSSSssssssssss........................"
+      - ".......................SSSSSSSSMMMMMMSSMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnsnnnnssssssSSSS........SS.SSSSSSSssssssssss......................."
+      - "......................SSSSSSSSSMMMMMMMSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnsnnnnssssssSSSSS.......SSSSSSSSSSsssssssssss......................"
+      - "......................SSSSSSSMMMMMMMMMSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnsnnnssssssSSSSSS.....SSSSSSSSSSSnsssssssssss.s..................."
+      - ".....................SSSSSSMMMMMMMMMMMSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnsnnnnsssssSSSSSS...SSSSSSSSSSSSSnsssssssssssssss................."
+      - "................S..SSSSSSMMMMMMMMMMMMMSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnsnnnnssssSSSSSS.SSSSSSSSSSSSSMMMssssssssssssssss................"
+      - "...............SS.SSSSSSSMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnsnnnnnssnnSMSSSSSSSSSSSSSSSSMMMMMsssssssssssssss................"
+      - "...............SSSSSSSSSMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnnMMMSSSSSSSSSSSSSSSMMMMMMsssnnsssssssss................"
+      - "...............MMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnmm.............."
+      - "..............MMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnmm.............."
+      - ".............MMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnm............."
+      - ".............MMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnsnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnmmmm.........."
+      - ".............MMMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnmmmm........."
+      - "...........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnsnnnnnnnMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnmm........"
+      - ".........M.MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnsnnnnnnnMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnmm......."
+      - "........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnmm......"
+      - "........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnm......"
+      - "......MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnm....."
+      - "......MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnm....."
+      - ".....MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnn....m"
+      - "....MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnmm..m"
+      - "...MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnmm.mn"
+      - "...MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnmmn"
+      - "M..MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnmnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnn"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnnnnnnMMMMMMMMMMMMMMMMMMMMMMMMMnnnnnnnnnnnnnnnnnnnnnnn"
+  - id: mountain-far
+    _sprite: mountain
+    _palette: mountain-far
+  - id: haze
+    _palette: mountain
+    lines:
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+  # A strip of pines that tiles horizontally.
+  - id: pines
+    _palette: forest
+    lines:
+      - "................................................................"
+      - "................................................................"
+      - "..........................................................ax...."
+      - "..........................................................aa...."
+      - ".........................................................baaax.."
+      - "........................................................baaaaaa."
+      - ".......................................................gbbabaaa."
+      - ".......................................................bbgbaxaa."
+      - ".......................................................bbbaaaaa."
+      - "........................................a.............gbbaaaaaax"
+      - ".......................................aaa..............baaaaa.."
+      - "......................................abbaa.............abbbxaa."
+      - "......................................aabxx............aaabbaxa."
+      - "....................aa...............bgaaaax..........ggbaaaaaaa"
+      - "...................bba..............bbbabxaxa.........bbbabbaaaa"
+      - "a.................baaaaa...aaaa......gbaaaaa.........bgbbbaaaaaa"
+      - "a.................bgaaa.....ba......gbbaaxaaa.........ggbbaaxxaa"
+      - "aa................bbaaa....aaaa.......aabaa.........gbgbaaabaxaa"
+      - "ba...............gbaaxaxa..abaa......baabaaa............ababaaab"
+      - "aaa..............bbaaaaa.gbgbaaa.....aaaaaaa...........abbaaxaaa"
+      - "aaa................baax..gbaaxxxa....bbaaxaa..........ababaaaaaa"
+      - "aaa..............aaaaaax..gbaaaa....bbbabaaax........bbbgabaaaxa"
+      - "aaaa.............babaxaa.bbaaaaax..bgbbaaaaaaa.......bggbbaaaaxa"
+      - "xaaa............bbbbaxaxabbabaaaa.bbbgbaaaaaaax......bbbaabaaaax"
+      - "aaxaa...........bgbabaaxx..abaa...bbbbbabaaaaxa....bbbbbaaaaaaaa"
+      - "aaa.............bbbbaaaaa.aabaaa.....aaabxaa............ababaaaa"
+      - "aaaa...........bbbabaaaaaaaaaaaaa...aaaaaaaaa.........bababbaxaa"
+      - "aaaa..............aaaaa.gggaaaaaaa..aaabaaaxa.........aababaaxaa"
+      - "aaax.............baaaaxabbbbbaaaa..bgbabbaaaaa.......bbgbaaaaxax"
+      - "aaaaa............abaaaabbbgaaxxxaabbbbbaaaaaaaa.....bgbgbabaaaax"
+      - "aaaaa...........gbbbbxabgbgabaxaaagbbbaaaaaaaaa.....bbbgaaaaaaxa"
+      - "aaaaaa.........gbbgaaaaabgbbaaaaxbbgbabaaaaaaaxa..bbbbbbabbbaaaa"
+      - "xaaaaaa.......bgbbaaaaaaaaaaaaax.ggggaaaaaaaaxxa.bgggbbaaabaaaaa"
+      - "aaxa..........bgbbbbaxaaaaaabaaxa...aaabbaaaa.........abaaabaaaa"
+      - "axaa............aabbbaaaabaaaaaaaa.abbaaaaaaaa........abbaaaaaaa"
+      - "xaxaaa.........aaabaaaaaaaaaaxaaaa.bbabbaaaaaa......aaaaabaaaxaa"
+      - "axaaa...........gbgaaaabgbgaaaaxaaggbgbaaaaaaaa....gbbbbaabaaaxa"
+      - "xxaaxa.........bbbaaaaagbgbabaaxaggbgababaaxaaxa..ggbbbaaaaaaaaa"
+      - "aaxaaaa.......bbgbbababbbgaaabaabbbbgababaaaaxaaagbggbbbaaaaaaxa"
+      - "aaaxaaaa....gggbbbababbbbgabbaaabbgbbaaaaaaaaaaaabbbbggabbbbaaaa"
+      - "xxbbaaaabaabaaabaaaaxxaaababxxaaaabaaaaxxaabaaaaaaabaabbabxxaaaa"
+      - "xxaaaaaaaaabaaaaabaaxxaaabaaxxaaabbbaaaxxaababbaaaaaaaaaaaxxaaaa"
+      - "baababaaaaaaaaaaabaaaaaaaaaaaaaaaaaaabbaaaaabaaaaaaaaaaaabaaaaab"
+      - "aaaaaabaaaaabaaabaaaaaaaaaaaaaaabaaaaaaabaaaaaaaabaaaaaaaaabaabb"
+      - "aaaaabbaaaaaabaabbbabaaaaaaaaabbaababaaabbaaababbbaabaabaaabaaaa"
+      - "aaaaabaaaaaaaaabaabaababaaaaaaaaaaaaaaaaaaaabaaabbababaaaabbaaaa"
+  - id: pines-far
+    _sprite: pines
+    _palette: pine-far
+  - id: pines-mid
+    _sprite: pines
+    _palette: pine-mid
+  # One row of bark: `scale` stretches it into the whole trunk of the big tree.
+  - id: bark
+    _palette: forest
+    lines:
+      - "xrrttTTTuTTtttrrrx"
+  # Moss on the big trunk, thicker at its foot; a patch higher up is cut from it with `crop`.
+  - id: moss
+    _palette: forest
+    lines:
+      - "....nmmMmMm..............."
+      - "....nmmmmmmn.............."
+      - "....mmmmmmmn.............."
+      - "....nmMmmmm..............."
+      - "....nnnnnnm..............."
+      - "......nn.n................"
+      - ".......n.................."
+      - ".......n.................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - ".........................."
+      - "....mM.....M.............."
+      - "....Mm....MM.M............"
+      - "....MMMM..M.mM............"
+      - "....mmmn.MMMM............."
+      - "....mmm..m.MM.M..........."
+      - "....mmm.MMMMMMm..........."
+      - "....mmm.M.MmMMM..........."
+      - "....mm..MMMMMM............"
+      - "....nn.nmMmmMMmn.........."
+      - "....n.nnmmmmmmmn.........."
+      - "....n.n.mmmmmmmn.........."
+      - "........mmmmmmm.n........."
+      - "........mmMmmMm..........."
+      - ".......nmMmmmmmn.........."
+      - ".........mmmmM.n.........."
+      - ".........mmmm.m..........."
+      - ".........nnnnnm..........."
+      - "........nnnnnnn..........."
+      - "........m.mnnn............"
+      - ".......M..nnnn............"
+      - "....M.mm.mn.n............."
+      - "......MM.M................"
+      - ".....MM.MM.M.............."
+      - ".....MMMM.M..............."
+      - "....MMMMM.M..............."
+      - "....MMMMmMM.m..M.........."
+      - "....MmmMmmmmn.Mm.........."
+      - "....mmmmmMmmMMMMMM........"
+      - "....mmmmmmmmnMmmMM........"
+      - "....mmmmmmmmnMMMMM........"
+      - "....mmMMMmmMmmmmmmm......."
+      - "....mmmmmmM.mmmmmm........"
+      - "....mmmMmmmMMmmmmm........"
+      - ".....nnnnnMnMmmmmm........"
+      - ".....nnnnnMnmmmmmm........"
+      - ".....n.nmmmmmMmMm........."
+      - "....nm.nnmmmnnnnn........."
+      - "....n.nnmmMmnnnnnn........"
+      - "......nmmmmmm.mm.........."
+      - "......nmmmmmm.n..........."
+      - "........nnnn..n..........."
+      - "........n.n..............."
+      - "..........n..............."
+      - "....M.......M.Mm.........."
+      - "....M.M....mmMMMMM........"
+      - "....MMM.M..MMmMMMM........"
+      - "....MMMMM..mMmmmMm........"
+      - "....mMMMM.nmmmmmmmn......."
+      - "....MMMm..m.mmmmmmn......."
+      - "....mmmm.M..MmMmmm........"
+      - "....mmM.MM.Mmmmmmn........"
+      - "....mmM.MMMM.Mn.n........."
+      - "....mMMMMMMmmMn.n........."
+      - "....nmmmMmMmmmnn.........."
+      - "....nmmmmmmmmmmn.........."
+      - "....nmmmmmmMMmMn.........."
+      - "....mmmmmmmmmmm..........."
+      - "....mnnmnnnnmnm..........."
+      - "....mmmmnmnn.n............"
+      - "....mmmmMmn.m............."
+      - "....n.nnnnn.n............."
+      - "....Mmnnnn.n.............."
+      - "....MMn.nn.n.............."
+      - "....MnMMM..M.............."
+      - "....MMmMM.mM.MM..........."
+      - "....MMmMMmMMMMM..M........"
+      - "....MMMMMMMnMMMM.Mn......."
+      - "....MmMMMmMMMMMM.MM.MM...."
+      - "....MMmMMMMMMMnMMMm.MM...."
+      - "....mnnmmmmmmnmmmmm.mn..m."
+      - ".m..mmmmMmmmmmmmmmmmmm..m."
+      - ".m.mMnmmmmmMmmmmmmmmmm..m."
+      - ".m.mmmmmmmmmmMmmmmmmmnmmm."
+      - ".m.mmmmnMmnmmmmmmmmmnmmMm."
+      - ".MnnnnmnnnnMnnnnnnnnnnnnn."
+      - ".nnnnnnnnnnnnnnnnnnnnnnnn."
+      - ".nnnnnnnnnnnnnnnMnmnnnnnn."
+  # Hanging boughs of the big tree.
+  - id: canopy
+    _palette: forest
+    lines:
+      - ".................................................................bbbbgggggbggbaaabbaabbabaaabaaabababb.ba....."
+      - ".................................................................aabbaababaabbaabgaababbaabbaaaaaabbaa.aa....."
+      - ".................................................................aaaaaaaagbagbbabbbaaaabbbbbabbbabababaaa....."
+      - "..g..gb..........................................................babbbbbabbgbgbgggbbaaaggabgbabbaxbaaaaaa....."
+      - ".bbg.gb..b.....................................................a.bababggbggggbgbgggggabbgbgggggbbaaaaaaa.b..gb"
+      - "bgggbgbaaaa....................................................a.axxabbbbbbgggbggbggggbgggbgbgggbabagbbaggbgbg"
+      - "gbgbbbabbab..a.........bg...............g...b....................agxaggbgggbbgbbbgbgggbgbbggggbgababgbgaabbgbg"
+      - "ggbgggbbbaa.ba.....gggbgb.ba............gb.bb....................aabaaabaabbaabbbggggbggbbbgggggagbbgbbbbbgbbb"
+      - "ggggggbabaaaba.....bgbggbbgaa.......gg.gbggbba.bb................aabxbbaaababaabababbaabgggbbbbgaabaabgbbbgbbg"
+      - "babbaaaaaaabba..bggbbgggbgbaaaaa....bgbgbgbbgbbaa.................aaabaaaabbaaaabaabbgbbgbggbgggaaababbaaaaabb"
+      - "abaabbbabaaaab..abaaaaabbaaaaabb....bgbggbbggbaba.................xa.aaaaxaaaaxababaagbggbbgbbggaaaaabgaabaaba"
+      - "ababaababbaaaa..abaabaaaaaaabaaa.b.gggbgbggggbbab..b...........g..ab.aaaaxaxaaababbaagggbggbbgbbababaaaabaabaa"
+      - "axaaaxxaaaaxaa.babbbbaabaaabbaaa.b.gbbgbgbbbgaabaaba.......gb.ggg.bb.abagaaaxaaaaxaaabaaaababaababbabaaabbaaba"
+      - "aaxaaaaaaaaaaa.aaxaaaaxaaaaaaaaa.aaaabaaabaabaababba....b..bg.bgbbggbgaabgabaaaxaaaxabaabaaabaaaabbaaabaaaaaax"
+      - "xaxaaxaaaaaaxx.aaaxxaxaaaaaaxaaa.abaaaaabaabababbaab...gb.gbbbgbgbgbggabbbbbaaaaxaaaxabababbbabaaabbabbabbaaba"
+      - "xaaaaaaaaaa.aa..aaaaaxaaaaaaxaaa.aababbaabaaabaaabaa...gbbbbbggbgbbggbaaaaaaaabbaxaaaaaaaaaabaaaaaaxaaaaxaaaaa"
+      - "aaaxaaaaaxx.ax....aaaxaaaaaaa.a..aaabaaaaabaababaaabb..gbbggbgbbbbbbgbaabbabbaabba.aaaaxggagggabaaxaaxaaaaaaaa"
+      - "aaaaaaaaaax.....b..bba.aa.xa.....aaaaxaaaaaaaaaaaaaag..bggbbgbgbbbgbbgaabaaaaababa..abagbbgbggbbababaxaaaxaaaa"
+      - "aaaa.aa..a..bg.bgb.bb..aa..x.....aaxaaaaaaaaaaxaaaaaa..abbaaabaaaabaaaabbbaaabbbab..abbggbbbbgbgbbaaaaaxaxxaxa"
+      - "..aa.aa..a..gbgbbbgggabab........x.axaaxxaaaaaaaax.aaaaaaaababbaaababaaaabbbaaaaaa..aaaaaaaaaaaabbabbaaaaaaaaa"
+      - ".........g.ggggbgbgbbbaaa........a..aaaaaaaaaaaaa..ababbaababgbabaaabaabaaabbaaxa...aabbaabbbaaabaaaaaaaax.aa."
+      - "........bggbggbgggggbaaaa........x..xaaxaaaaaaxxx..aabgabbgbabgaabbbaaabbaaaabaa....aaabaababbaaaaabbabxax...."
+      - "........ggggbggbggggbbbbb.ab........aa.aaxaaaaaaa.gaabbgabggggbxgbaaabaaaaaabaagg..gxxxaaaaaaaaaxaxxa.x.x....."
+      - "........bbbaaaabbbaabaaabbaa........aa.aaaaaaa.aa.bgabbbbgbgbbbbggbbabgxggabggagb.gggabbaaaxaaaaaaaaa........."
+      - "........ababaabbaaaaaaaaaaaa........x..xa.axaa....ggbbbgbbgbggbbbgbaabaabgbggbbgbggbgaabbxabaaaaaaaaa........."
+      - "........aaaaabbabababaababba..................bb.gggbbggbgbggggggbbabgagbbbbggbgbbgggabaaaabaaaaaa.x.........."
+      - "........aaaaaaxaaxaaaaaaaaaa..................bg.ggggbbgbgbggbbbgbgagggggbbgbbgbbgggbbaabbbaaaaxa..a.........."
+      - "........xaaxxxxaaaxaaaaaaaaa..................abaaabbbabbabbbabaagbggbggbagbbgbgbgbgbabbaabaaab.a............."
+      - "........aaaxaaaaxxaaaaxaa..a..................aabaaababaaaababgbggbbbgbgbababaabgaabbabbbaaaaaa..............."
+      - "........xa.aaaaxaaaaaaaaa..a..................baaaabaabbabaababbgbgbbgggaaabgbabbbagbbbabaababaa.............."
+      - ".........a.aaaaaaaaaxaaaa..a.................baaaaaabbaaaabaagbggggggbgbagbbbbgbbgbbbbababbbabaa.............."
+      - ".........a..aaaaaaaxaa.aa....................aaaxxaaxaxaaaagabggbbgggbgbbggbbbbbgbgggaaabaxbaaxa.............."
+      - "............aa.aaaxaxx..a....................aaaxaxaaaaaaxababaaaababaabggggggbgbbbbgaabaaabaaa..............."
+      - "............a..aa.............................xaaaaaxaxaaaabaabbaagaaabaabbabaaaababbbbabbaa.aa..............."
+      - "..............................................xaaxxaaaxaaabbbaggbbbgabbaabbbabaabbbbbbabaaaa.ax..............."
+      - "................................................x.aaaxxgaagbggbgbgbbbgbagbbbabbgabgbbababaaba................."
+      - "..........................................b...g...aa.aagbbgbbbbbbgggggggggggaagbbbgbabaaaaaax................."
+      - "......................................gb..gg.bg..aaabagbggbbbggbbgbbbgbgbggbbaaaabbabaaabaax.................."
+      - "......................................bbgbbbggbggaaaaabbaabbaggbbgbgbbbggbbgabbbabgabbabaxxa.g..g............."
+      - "...................................g.bgbbgbgbgbbgagabbaabbabaabbaaaaaabaaaabbabaaaaabbaabbaabg..ga............"
+      - "..................................gbgbggggggggbggabaaaabaabbbabbbbabaaaaaababbbbbaaabaaagggbggbbga.aa........."
+      - "..................................aabaagbabbggbgbggaabaaabbaabbabgbbabbabaaaabbbabababgabbggbggbbbaaa........."
+      - "...........bb..g..................abaaabgbgbggbggbgabbaaabbbagbbbgbbbgggaaaaabaaaaxxabgbbbbggggbgabaaa........"
+      - "........g..gg.bgg.................aagaggbgbbggbbbbgaabaaaabbgbbbbgggggbbaaaabaaabaxxaabaaabbaabaaaaabb.b......"
+      - ".......bggggbbgbg.ba.............aaagagbgggbbgggggbabbbagabgbbgbbbbgbgggbbabaaaaabaxaaababaaaabaaaaaab.aa....."
+      - ".......bbbbggbgggbba.............aaabbbbbaaabaabbbaaaaaababaabbaaaaaabbabaaaabbabbaxaabbbbabaaaaababbb.ba....."
+      - "....bg.bbbggbgbgbaaba.............abaababaaaaaabbababaaaaaaabababaaaaaabbagbbgaaaaaaaaaaaaaaaaaaaaaaxxxxa....."
+      - "....bgbgbggbbbbggbbba.b............aabbbababaabbbbabaaaabbabbaaabaabaabbabbbgbbbaa..aaaaaaaaaaaxxaaaaaaa......"
+      - "....aaabbbbbgggbgbbbb.b............abaaabbabaaaabbbaaabaaaaaaxaxaaaxaabbgbggbggaaa..aaaaaaaxxaaaaaxaxaa......."
+      - "....baaaaaabbbbbbbbbbaba...........aaaaxaaaaxxaaaaaxaaaaaaxaaaaaaaaaxbgbgbgbggbbaaa..aaaaaaaxxaaaaaaaa........"
+      - "....baabbbbbbaaaababaaab...........axaaabaxabaaaaaaaaaaaxaaaaaaaxaaaabbggbgggggaaab.aaaxaaxaaaaxaaaaa........."
+      - "...baabbaaaaaaabaaabbbbb...........abgaaggxbbbaaaaxaaaaaaxaxxxaaaaaaababbbabababaaa.a....xa.aaaaaa.ax........."
+      - "...xaaabbabaaaaaaaababba.........b..gbbgbgbgbbaaaaaaaxaa.aaaaaaxaxaaaabbababbaaaaabaab...xx.xa..a............."
+      - "...aabaaaaaaaaxaaxaaaaaa.........gbgbbgbggbbgbbaababbaaa.aa...aa.aa..bbaaaaaaabbabbbab........................"
+      - "...aabbagbaaaxxaaaaaaaaa...b.gbbbbagbbgggggbggaaaaabbaaa.x........a..aaaxxaaaaaaxax.a........................."
+      - ".gg.gggbggaaaaaaaaaaaaa...gb.bggbbbbgbbbbgggbbbababab.ab..........a..axaxaxaaaaaaxa.a........................."
+      - ".bgggbbbbgbabbaaxaaaxaxg..bbbbbgggababaababaaabaaabbaaba.............xaaxaaxaaaxxaa.x........................."
+      - ".bgggggbbbabaaaaaaaa...bbbgggbgbbbbbaaabbabaaaaabaaaaabb.............aaaxxxaaaaaaa............................"
+      - ".bbbgggbbgabaaaxaaxx..gggbbggbggbgabbbbaaaabaabaaaaaaabaa...............aaxxaaa..a............................"
+      - "bgbbgbbgbbaabbaaa.aa..bbggbggbgbgbbababaaababaaabaabbaaaa.................xx.aa..a............................"
+      - "aaaaaabaaaaaab.a..x...bggggbggbbgbaababbaaaaaaaaxaaaxaaa......................................................"
+      - "bbbaggabbaaaaa.....aa.aabaabbaaabbbbbbabxaaaaaaaaaxaaxaa......................................................"
+      - "bbbbbbbbbbbaab.....ba.aaaababbaababaabbaabaaaxaaaaaaa.ax......................................................"
+      - "gggbgbgggaaaaa.ab..ab.bbbbbaabaabaaaabbaaaaaxxaxxaaaa.aa......................................................"
+      - "bgggbbbbgbbaba.ab..xaaaaaaaaxaaaaaaxaaaaaaaaaaxaaa.aa........................................................."
+      - "gggbgbbgbaaabaaba..axxxaaaaaaaaxaaaxaaaxaaaaax.ax..x.........................................................."
+      - "bbggbbbbgaaabbabba.b.aaaxaaaaxaaaaaaaaaaaaaaaa.aa..x.........................................................."
+      - "aaabbaaaabbbbbbaaa.aaaxaaaaaaaaxaxxaaaaax.x.xa..a............................................................."
+      - "aaaaaaaabbaaaaabaa.aa.aaaaaaxaaaaxaaaaaa......................................................................"
+      - "bbabbaaagabbbbgbabbab..axaaaaaxxaaxaaaxa......................................................................"
+      - "xaaabaxgbgggggbgbaaaa.baa.aaaaaaxaaaxxa......................................................................."
+      - "axaaggagbbgggbbggaabb.aaa.aa..aa.aa..........................................................................."
+      - "xaagbgbbgbbggbbggaaabbaa...a..aa.aa..........................................................................."
+      - "axxgggbgbbgbgggbgaaabaab..b..................................................................................."
+      - "abxaaaaaaababbbabbabbaaa..b..................................................................................."
+      - "bbabababbbabaaaaabaaaaaa.ab..................................................................................."
+      - "abbbaabbaaabbaaaaabbaaabaab..................................................................................."
+      - "aaabaabaabbaaabaabbababaaba..................................................................................."
+      - "aa.aaaaaaaaxaaaaaaaxxaxaaxa..................................................................................."
+      - "aa.aaxaaaaxaaxaaaaaxaxaaa.x..................................................................................."
+      - "a..axaaaaaaaxaaxaaaxaaaaa.a..................................................................................."
+      - "x..xaxaaxaaaaaaaaaaaaaaaa....................................................................................."
+      - "a..aaaaaxxxaxxaaaxaaaaax......................................................................................"
+      - "...ax.aaaaaaaaaaa.aa.aa......................................................................................."
+      - ".......xax.ax.xaa.aa.........................................................................................."
+      - "...........aa..a..a..........................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+      - ".............................................................................................................."
+  - id: branch
+    _palette: forest
+    lines:
+      - ".............................."
+      - ".....................r.....ttt"
+      - "....................r...ttt..."
+      - "...................rtttt......"
+      - ".................trt.........."
+      - "..............tttr............"
+      - "..........ttttrrr............."
+      - ".......tttrrrr.r.............."
+      - "....tttrrr....r..............."
+      - "ttttrrr......................."
+  - id: pine-big
+    _palette: forest
+    lines:
+      - "..........................aa.........................."
+      - "..........................aa.........................."
+      - "......................aaaaaaaaxa......................"
+      - "......................bggaaaaaax......................"
+      - ".....................bgbgbbbaaaaa....................."
+      - ".....................bbbaaaaxaaxa....................."
+      - "....................bbbbaaaaaaxaaa...................."
+      - "........................aaaaxa........................"
+      - ".......................ababaaax......................."
+      - ".....................ababaaaaaxaa....................."
+      - "......................bbbabaaaaa......................"
+      - "....................gbbbaaaaxxaaaa...................."
+      - "....................bggbbabaaaaxaa...................."
+      - "...................gbbbgabaaaaaaaaa..................."
+      - ".......................aaabxaaa......................."
+      - ".......................aabaaaaa......................."
+      - ".....................aaaaaaaaaxaa....................."
+      - ".....................bbgaabaaxaaa....................."
+      - "....................gbggaaabaaaaaa...................."
+      - "...................gbbgbabaaaaaxaaa..................."
+      - "..................bbbbgaabaaaaaaaaaa.................."
+      - ".......................aaaaaaaa......................."
+      - "......................baabbaxaxa......................"
+      - "....................aabaaaaaaaaaax...................."
+      - "....................bgbbabbaaxaaaa...................."
+      - "...................bgbggabbaxaaaaaa..................."
+      - "..................bgbbgaabaaaaaxaaaa.................."
+      - ".................bggbbbaaaabaaaaaaaaa................."
+      - "......................aabbbaaaaa......................"
+      - "......................aaabaaaaaa......................"
+      - "....................aaaaabaaaaaaaa...................."
+      - "...................gbggbbabaaaaaaaa..................."
+      - "...................gbbbgbaabxxaaxaa..................."
+      - ".................gbbgbbababaaaaaaaaaa................."
+      - "................bgbbbgbbabbaaaaaaaaaaa................"
+      - "......................aaaaaaaaaa......................"
+      - ".....................aaabaaaaxaaa....................."
+      - "....................abbaaaabaxaaaa...................."
+      - "...................bgbbbabaaaaaaxaa..................."
+      - ".................gbbgggbaaaaaaaaaaxaa................."
+      - "................bgbbggaaaaaaaaaaaaaaaa................"
+      - "................gbggbgaaabbbaaaaaaaaax................"
+      - "......................abaaaaaaaa......................"
+      - "....................baaabaaaaaaaaa...................."
+      - "....................aaabaabaxaaaxa...................."
+      - "..................ggbbbbabbaaaxaaaaa.................."
+      - ".................bgbbbbbababaxaaaaaaa................."
+      - "................bbbbbbaaaaabxaaaaxaaaa................"
+      - "..............gbgbgbbbaabaaaaaxaaaaaaaaa.............."
+      - ".....................aaaaabbaaaaa....................."
+      - "...................aaaaaababaaaaxaa..................."
+      - "...................bbbaaaaabaaaxaaa..................."
+      - ".................ggbgbbbababaxaaaxaax................."
+      - "................bbggbgaabbabaaaaaaaaxa................"
+      - "..............gbbbbbgaabaabbaaaxaaaaaaaa.............."
+      - "..............bbbbgbbaabaaabxaaaaaaaaaaa.............."
+      - "....................aabbaaaaaaaxaa...................."
+      - "...................aabaaaaaaaaaaaxa..................."
+      - "..................babbaabaaaaaaaaaxa.................."
+      - "................gggbgbaabbbaaxaaaxaaax................"
+      - "................bbbgbbabbaaaaaaaaxxaaa................"
+      - "..............bgbbbgggabbaaaaaaaaaaaaaaa.............."
+      - "............bbgbbbbbaaaaababaaaaaaaxaaaaaa............"
+      - "....................babbaaaaaaaaax...................."
+      - "...................aaabaaabaaaxaaaa..................."
+      - ".................ababbbbabbbxaaxaaaaa................."
+      - "................bgbbgbaaaabaaaaaaaaaaa................"
+      - "..............bggbgbbbaabaabaaaaaaaaaaaa.............."
+      - "............bggbgggbgababbabaaaaxaaaaaxaaa............"
+      - "...........gbgbbbgggbbbabaaabaaaaxaaaaaaaaa..........."
+      - "....................bbabaaaaxaaaaa...................."
+      - "..................aaababbbaaaaxaaaaa.................."
+      - "................abaaabaabbabaaxaaaaxxa................"
+      - "...............gbgbgbbbaabbaaaaaaaaxaaa..............."
+      - "..............bbbbbbbabaaaaaaaaaaaaaaaxx.............."
+      - "............bggggbgbbababaabxaaaaaaxxxaaaa............"
+      - "..........gbbbbbbbbbabbaaaaaaaaaaaaaaaaaaaaa.........."
+      - "...................aaaabaabaaaxaaaa..................."
+      - "..................babaaabbbaaaaxaaxa.................."
+      - ".................aababaaaaabaaaaaaaaa................."
+      - "...............gbgbgbbaaabbaxaxaaaaaaaa..............."
+      - "............gggbbgbgbaaaaaabaaaaxaxaaaaaaa............"
+      - "...........gbbbbbgbgaaaabaaaaaaaaaaaxaaaaaa..........."
+      - "..........bbbbbbgbbabbaaaabaaaaaaaaaaaaaaaaa.........."
+      - "...................babaaaaabaaaaaaa..................."
+      - "..................babbaaabaaaxaaaaxa.................."
+      - "................baaaaaaaababaxaaxaaaax................"
+      - "..............gbbbbggbabaaaaaaaxaaaaaaxa.............."
+      - "............bbggbbgbababbabaaaaaaxxaxaaaaa............"
+      - "..........bgbbbbbgbgaababaaaaaaaaaaaaaaxaaaa.........."
+      - ".........gbgbbbbgbbbaaaabababaaaaaaaaaxaaxaax........."
+      - "...................abaaaabaaxaaaaxa..................."
+      - ".................abaabbabaaaaaxaaaaaa................."
+      - "...............aabaaaababaabaaaaaaxaaax..............."
+      - ".............gbbbbbbgaaabaaaaaaaaaxaaaxaa............."
+      - "...........bbgbgbggbbabaaabbaxaaaaaaaaaaaaa..........."
+      - ".........gbbbbbbbgbaaaaaaaaaaaaaaaaaaaxaaxaaa........."
+      - "........gbbgggbgbbgbaaaaabbaaxaaaaaaaxaaaaaaaa........"
+      - "..................abaaaababaaaxaxxaa.................."
+      - ".................aaaaaaaabbbaaaaaaxaa................."
+      - "..............abbaaaabaaabbaaaaaaaaaaaax.............."
+      - ".............bbbgbbgbbbaaaaaaaaaxaaaaaaaa............."
+      - "..........bbbggbggggaaaaabaaaaaaxaaaaaaaaaaa.........."
+      - ".........bggbbbgbbgbbaababaabaaaaxaaxaaaaaaaa........."
+      - "......bbgbbgbbgbbbaaaaababaaaaaaaaxaxaaaaaaaaaaa......"
+      - "..................aabbaabbaaaaaaaaaa.................."
+      - "................bbabaabaababaaaxaaaaaa................"
+      - "..............bbaaaaaaaaaabbaaaaaaaaaaaa.............."
+      - "............gbgbbbbbaabaaaaaaaaaxaaaaaaaax............"
+      - "..........bbgbbbbbbbaaababaaaaaaxaaxaaaaaaax.........."
+      - ".......bbbbggbbbggabaaaaaaaaaaaaaaxaaaxxaaxaaaa......."
+      - "......ggbbgbbbbbggbaaabbabaaaaaaaaaxaxaaaaxaaaaa......"
+      - ".................aaaaaabaaaaaaaaaaaaa................."
+      - "...............abaaaaaaaaaaaaaaxaxaaaaa..............."
+      - "............baaaaaaaabaaaaabaaaaxaaxxaaaaa............"
+      - "...........bggbbbggbaaaaaaaaaaaaaxaaaaaaaaa..........."
+      - ".........gbgbbgbbbbbaabaaaaaaaaaxaaaaaxaxaaaa........."
+      - ".......bbbbgbbbgbbaaaabbbaaabaaaxaaaaaaaaaaaaaa......."
+      - ".....bbbggbbbgggbabaaaabaaaaaaaaxaaaxaaaaxaaaxaaa....."
+      - "................aaaaabaaaaaaaaaaxaxaaa................"
+      - "..............abbababbbbabbbaaaaaaxxaaaa.............."
+      - "............ggbgbgbbbbbbbaabaaaaaaaaaaaaaa............"
+      - "..........bgbgbbgbgbaaabbabaaaaaaaaaaaxaaxaa.........."
+      - "........bbbbbggbbgbaababaababaaaaaaaaaaaaaaaaa........"
+      - "......bbgbbbbbgbbbaaaababaaaaaaaaxaaaaxaaxaaxaaa......"
+      - "....bbbbgbbbbbgggaababaaaaabaaaaxaaaaaaaaaaaaxaaax...."
+      - "................aaabaaaabbbaaaaaaaaaax................"
+      - ".............aaaaaabaaabbaaaaaxaxaaxxaaax............."
+      - "............bbbbbbggbbabaaaaaaaaaaaaaaaaaa............"
+      - ".........ggggbbbbbgaaaababbbaxaxxaaaaaaaaaaaa........."
+      - ".......bbbbgbbgggbaaaabaaabaaxaaaaxaaaaaaaaaaaa......."
+      - ".....bgbbbbbbbbbgaaaabaaaaaaaaxaaaaaaaaaaxxaxxxaa....."
+      - "...ggbbbbbbbbgggbaaabbbbaabaaaxaaaaaaaaaaaxaaaaxxaa..."
+      - "................aaaaaababbabxaaaxaaaax................"
+      - ".............aaabbaaabaabaabxaaaaaxaaaaaa............."
+      - "...........bggbgbbggaaaabaaabaaaxaaaaaaxaaa..........."
+      - ".........ggbbgbbgbbbabbbababbaaaaaaaaaaxaaxaa........."
+      - "......bgbbbbgbggggaaaaabaabbaaaaaaaxaaaaaaaaaxaa......"
+      - "...bgbbbbbbbbbgbbaaaaabaaaaaaxaaaaaaaaxaaaaaxaxaaaa..."
+      - "..bgbgbgbbgbgbbgbabaaabaaaaaaaaaaaxaaaxxaaaaxaaaaaaa.."
+      - "...............ababaaabaabbaaaaaaxaaaax..............."
+      - ".............aabaaababbaaaaaaaaaaaaaaaaaa............."
+      - "..........bgggbbggbaaabbbaaaaaxaaaaaaaaaaaax.........."
+      - "........bgbbbgbbggbabaabaaaabaxaxaaaaaaxaaaaax........"
+      - ".....bbbbbbgbbgbbaaaaaaaaaaaaaaaaxaxaaaxaaaaxaxaa....."
+      - "...gbbbbbbbgbgbgbaaabaaaaaaaaaaxxxaxaxaaaaaxaaaaaax..."
+      - "..........................xx.........................."
+      - "..........................xx.........................."
+      - "..........................xx.........................."
+      - "..........................xx.........................."
+  - id: pine-tall
+    _palette: forest
+    lines:
+      - "..................baax.................."
+      - "...................ba..................."
+      - ".................aaaaaa................."
+      - "................ggbbaaxx................"
+      - "................bbaaaaaa................"
+      - "...............ggbaaaaaaa..............."
+      - "...............bggbbaaaaa..............."
+      - ".................baaaax................."
+      - ".................aaaxax................."
+      - "................babaxaaa................"
+      - "...............gbbabaxaaa..............."
+      - "...............bbgbbaaaaa..............."
+      - "..............ggbbbabaaaaa.............."
+      - ".............gbbbaaaaaaaxaa............."
+      - ".................abaxaa................."
+      - "................aabbaaaa................"
+      - "...............bbabaaaaaa..............."
+      - "...............ggbabaaaaa..............."
+      - "..............bgbgbaaaaaax.............."
+      - "..............bbbbaabaaxax.............."
+      - "............bbbgbaabaaaxaaaa............"
+      - ".................abbaaa................."
+      - "...............abaaaaxaaa..............."
+      - "..............aaaaaaaxxaaa.............."
+      - "..............gbbabbaaaaaa.............."
+      - "..............bbbaaaaaaaaa.............."
+      - "............ggbbgbaaaaaxaaaa............"
+      - "............bgggabaaaaaaaaxa............"
+      - "................abbaaaxa................"
+      - "...............abbaaaaaaa..............."
+      - "..............baabaaaaaaaa.............."
+      - ".............bgggbaaaaaaxaa............."
+      - ".............gbbbabaaaaaaaa............."
+      - "............bbbbgaaaaaaaaaaa............"
+      - "...........gbggbaabaaaaaaaxax..........."
+      - "...............aabbbaaxaa..............."
+      - "..............aabaabaaaaaa.............."
+      - "..............gbgbaaaaaaax.............."
+      - ".............bbbbaaaaaaaaaa............."
+      - "............bbgbaabaaaaxaaaa............"
+      - "...........gbgbbaababaaaaaaaa..........."
+      - "................baaaaxaa................"
+      - "...............aaaabxaaaa..............."
+      - "..............aaaabbbaaaxa.............."
+      - ".............bbggaaaaaaaaaa............."
+      - "............bbgbbbbabaaaaaaa............"
+      - "..........bggbgbbaabaaaaxaaaax.........."
+      - "..........gbbbbbbaaabaxxxaaaaa.........."
+      - "................abaaaaxa................"
+      - "..............ababaaaaaaaa.............."
+      - "..............abbbabaaaaaa.............."
+      - "............bbgggbaaaaaaaaaa............"
+      - "..........bbbbbbaaaaaaaxxaxxaa.........."
+      - "..........bbbbbgaaabaxaaaaaxaa.........."
+      - ".........bgbbbgaaaaaaaaaaaaaaaa........."
+      - "...............aaaaaaaaxa..............."
+      - "..............aaaaaabaaaxx.............."
+      - "............ababbaaaaaxaaaaa............"
+      - "...........bbgbbaaaaaaaaxaaaa..........."
+      - "..........gbgggbbabaaxaaaaaaaa.........."
+      - "........bgbbbgbabbabaaaaaaaaaaaa........"
+      - "........gbgbbgbaaabaaaaxaaaaxxaa........"
+      - "..............aaaababaaaax.............."
+      - "............aaaaababaaaaaaaa............"
+      - "............baaaaabaaxaxxaax............"
+      - "..........bgggbgbaaaaaaaxaaaaa.........."
+      - ".........bgbbbbbaaaaaaaaaaaaaxa........."
+      - "........bgbbbgbbaaabaaaaaaxxaaaa........"
+      - ".......bbggbbbbbbaaaaaaaaxaxxxaaa......."
+      - ".............ababaaaaaaxxaa............."
+      - "............ababaababaaaaaaa............"
+      - "...........bgbgbbaabaaxaaaaaa..........."
+      - "..........bbbgbgaaaabxaaxaxaaa.........."
+      - ".........ggbggbaaaaabaxaxaaaaxa........."
+      - ".......gbbbbgbaaaaabaaaxaxaaaaxxa......."
+      - "......bbbgbbgbaaabbaaaaxaaaaaaaaaa......"
+      - ".............aabbbaaaaxaaaa............."
+      - "............bbaaaaaaaaaaaaax............"
+      - "...........bgbbbababaaaaxxxaa..........."
+      - "........bgbggggaabaaaaaaaaaaaaxx........"
+      - ".......bgbbbbbbaaaaabaaxaaxaaaaaa......."
+      - "......bgbbgbbbbbaaaabaxxxaaaaaaaaa......"
+      - "..............aaaaaabaaaax.............."
+      - "............abaabbaaaaaaaxaa............"
+      - "...........bbaaabaaabaaaaaaaa..........."
+      - ".........bgbgbbabaaaaaaxaaaaaxa........."
+      - ".......bbbbbgggaaaaabxxaaaaaaaaaa......."
+      - ".......ggbbgbbaaabaaaaaaaxaaaaaaa......."
+      - "....bggbbbbbgaabbaaaaaaaaaaaaaaaaaxa...."
+      - ".............aaabaaaaaaaaaa............."
+      - "............baabbabaaaaaaaxa............"
+      - "...........baabaaaabaaaaaxaax..........."
+      - ".........bgbbbbaaabaaaaaaaaaaaa........."
+      - ".......gbgbbbbbaaaaabaaxaaaaxaaaa......."
+      - ".....gbgbbbbbbbabbbabaaaaaxaaaaaxaa....."
+      - "....bbbbggbbbababaaaaaaxaaaxaaaaaaax...."
+      - ".............baabaaaaaaaaaa............."
+      - "............bbaabaabaaaaaaaa............"
+      - ".........abaaaaaaaaaaaaxaaxaaax........."
+      - "........bbbgbbgbaabaaaaaaaaaaaxa........"
+      - "......bgggbbbgabbaaaaxaaxaaaaaxxaa......"
+      - ".....bbgbggggaababaaaaaaaaaaaaxaxxa....."
+      - "...gbbbgbbgbgbbaabaabbaxaaxaaaaaaaaaa..."
+      - "............bbbaaababaaaaaaa............"
+      - "..........bbabaaabaaaaaaaaaaaa.........."
+      - ".........bababbbabaaaaaaaaaaaaa........."
+      - ".......bgbbbgbaaaaaaaaaaaaaaaaxaa......."
+      - ".....bgbbggbbbaabaaaaaaaaaxaxaaaxaa....."
+      - "....bbbbgbgbbaaabbbabbaaaaxaxaaxxxaa...."
+      - ".gbbbgbbbbbgaabaaaaabaxxaaxaaxaaaxaaaaa."
+      - "...........aaaabaaaaaaaaaaaax..........."
+      - "..........aaaaaaaaaaaaxaaxaaxa.........."
+      - ".......bbbbgbbaaabaaaaaaxaaaxaaaa......."
+      - "......bbbgbbgbaaaabaaaaaaaxxaxaaxa......"
+      - ".....bggbbbgbaababaaaaaaaxaaxaaaaaa....."
+      - "..ggbgbgggggaaaabbaabaaaaaaaaxaxaaaaaa.."
+      - "...................xx..................."
+      - "...................xx..................."
+      - "...................xx..................."
+      - "...................xx..................."
+  - id: bush
+    _palette: forest
+    lines:
+      - ".............................."
+      - "................g............."
+      - "....g.gb.....g.gg.bg..b......."
+      - "...ggggbggg.ggbgbggg.gg.bg...."
+      - ".bbgbbbbgbb.bbgbgbgggggggg...."
+      - ".babaaaabaggbgbggbgbgbbbgbgb.."
+      - ".aaabaaaaaababaaaaabaaabgbggg."
+      - ".bbaaaaaaaaaababaaaabaabgggbg."
+      - ".aaaaaaaaabaaaaaabababaggbggb."
+      - ".a.aaaabaaaaabaaaaaabbaaaaaba."
+      - "....a.aa.abbaaabbbbabaabaaaab."
+      - ".......a.baaabaaaaaaabbaaaaab."
+      - ".........aaaaaaaabaaabaaababa."
+      - "..........a.abaaa.aabaaaaaaba."
+  # Grass tile, repeated over the whole ground.
+  - id: grass
+    _palette: camp
+    lines:
+      - "hhhGgyhhhhhhhggh"
+      - "hhhhhhghGGhhhhgh"
+      - "hhhhhhhhhhghhhhh"
+      - "hhhghhgghhhghhhh"
+      - "gGhhhhhhhhghhhhg"
+      - "hGhhhhhhhhhhhhgh"
+      - "hhhhhhhhghhghhhh"
+      - "hGhhhghhgghghhhh"
+      - "ghhghhghhhhhghgh"
+      - "hGhhhghhhgghhghh"
+      - "yhghhhhghhgghhhh"
+      - "hghhhhghhghgghhh"
+      - "GgGhhhhhggghhhhh"
+      - "hghhhghghhhhhhgh"
+      - "ghhhgghhhghhhhhg"
+      - "hhhggghhhhhhhhhh"
+  # Tufts along the far edge of the meadow, tiled.
+  - id: grass-edge
+    _palette: camp
+    lines:
+      - "........................"
+      - "...h.........h........h."
+      - "...g.........h..hh....g."
+      - ".hhggh...hghgghhgg.gggh."
+      - "ghghghghghggghhghhhhghhh"
+  # The trodden earth around the fire.
+  - id: clearing
+    _palette: camp
+    lines:
+      - ".....................................................................................eee..........e.ge.e.gyygg......ege...ye............................................................................"
+      - "..................................................................................g.gee.e.yy.eeggeyg..dddgee.geg....ege.gg.eg..........................................................................."
+      - "....................................................................egge......eeygeDdddDDd..egeee..edddDdeygegg.e.e.g.ge.ge.ee..........gg..eeg........................................................."
+      - "................................................................ee.geeygeggeeeg.gDeddDedDed.eg..eeeddedddddgygegeygeeggeegggggy.gggeyeeee..ge.eee......................................................."
+      - ".................................................g.gg.......e...edddDEddDEeeyggEeEeddDdDddddge..egeDdddddedD...e.eegeEddDdDedDd.e.eegegdeddeEdgeeg......................................................"
+      - "..............................................egggee.eeegeeee.gddddEededeedeeedddededddeedDde..gedddDdDdDdddEDddDEDddddeddedDdeDDdgeeDdDeeddddye.gy....................................................."
+      - "............................................e.egdEdDdDd.gegeeDdddeddeeeDeDDDeeeddddeddDddddededdedddeDdeddedededeDddddEeDededdddeddDdDdDEddedDe..gg......ege.g.y........................................"
+      - "................................gg..e....ge.ggedddedeedeyge..deDeDeededdDeDdeededddddeEdddeEdddedddDdddDddeddeDddeDdedDddDeDdDdeededddddeddeeDd.gyee.eggg...ee.ygee....................................."
+      - "...............................y.gegege.ygeeeDddDdddDEdeeegygdeeeddddDdEddddddedDdddeddDddddDedddddDdedddddeeedeedDDdeddeedddeEDdddddeddedEddeddddeg.ege.dededDe.eeye........e.........................."
+      - "...........................ee.e.ee.gg.gegee.eddddeedeDddee..eDddedddEeeDddeeeeDdddedddddddeDdddddddDdDdddedddeedDdddddeDddDdddedddeddedddDEdDddDdDDddDededddeddddgg..g.................................."
+      - "..........................g..e.ey.g.ye.ge.eg..eddeddeDeddDddEddeDDdeddeDdddeEddddeDdDddeeDDeDddDddDDeddEddDdDdeedddddddeDddDDedededddEdddddeddddddddDddddEedeDDDe.geee.................................."
+      - "..........................e.eggeeee.egg..eeggdDdddedDdDeddDeddededdDdeDdddddDDddddDdddDddedEeDEdeedDddddDddDDedeDdeededdeedeeddeeeedDdDeeeEddedddddedDddEdddDDdDD.g..e....e.ggeege......................"
+      - "...........................geegeegg.eeeyeggdDedddeeddDeeeddddDdddddedDeddeDdeddddeddDDedddDeddededdeeDdddedDdeedddEeeEEddddeDedddDdeeddeeddDeeEdEddddDddedddeEeDede.e.ggg.gygg...gee...................."
+      - "..............................yeeEdddDdDDddDeDDeDDdEddddDdedEedededdEddddDdddEdDddeddDddeddDddddddddedddDdDeddedDdEdddeeddddeEeeddedDDDedeeDddeddddDedddeeDdeDeedeedy..geegddddddgeeeg.................."
+      - ".........................e.g.dededddDEDDeddedeDddedDDdedddddddddEdeddddeEdDdDedEdedddddeedDeDddEedddDdDeededeEdDdeddedDdeddeeDdddDEdddDdddDddDDedEdeddeeDedEedDdddddDeededdedDeddeegeg.................."
+      - "..............eegg..g.g.gyeddeDddddedddeDddDddDDddDdDedddDDedeedeDededEdeddddeddDdEdDDddDddDdDDdddddddDDdDDdddDdddddeeeeddDeeddDDDeddddddddDdddeddDeeeDddddDdDededeDdddddeeeeededdeey..................."
+      - ".............gg.g..geg.egDddddDddEdddddDdDedeeEDeDdddddDDdedddeeEddDeddeddEdeddeddddDeDddddEddeeDEeeddeddddddedddedDddeDedeedDdeddeddeddddeDddEdEddddddeDDdDddDddeEdddEdDdddddDDddgeg..................."
+      - "...........ge.gydeggege.deddDDddddeeddeeeDDddeDddddDddDEdDdddeddedddDdedDEdeDdddddddedeeDedDddedDeeeddddddDdedEdedDdDdeedddededdDDDdDdDddDdDeDeddEdddddddeDddDeeddDEddddDedDddDdedgg...................."
+      - ".........geggdDdeeyg...egDedDdDedeEeeededddDDdDDddeDDedDedddeEdddddeeeDdddEdddedDddDDddeeddededddDDdeDddDdedddeddddedddedeDDdddddeedDdeedddddddEedeeeDeddddddEedDdEDdDDddddddeeEdddgeeye.yyggeey.egg...."
+      - ".........e.egEeDDee.eeeg.DdddeedeEdeeedDededeDdDeDDDedeDdddddeededddeDdeedeeddedeDdEeddDdddeEdEedeDedddddeddDDEddddddddddDddddddDddddDDdEDDEedddDeeDdDeddedDdedddddeddddeddDddedDdddDeegeg.eee.geegg...."
+      - ".........eggegyeee...ggeyDeDDeDeedDdddeddedddeedDdddddDedDeddedddeddddedDedDeDdedeedDedDddEededEDDDDdeddedddDedDEDededEDdeDedddddddDDDeedDDeDDddddeDDddedddDeddeeddddddDdDdeddddddEEDee.eeeeegeeyegy...."
+      - "..........egee..ee..geegedEeDDeeDdddDdDeDdddddedEddeddddddDdedDddeedddedddeDddeddeDddedddedddDDdeddddddedDdddDDdddeDDddDdddDdddDdDeEddEdDDdDdddddedeDddddDddddeeedddedeDDDdEddDEddDDddeegggeyge..gge...."
+      - "..........eggeddddeDedddEeedDeeeeedDDeDeeDeDddeeddddDeDdeedddeedddddededeDddDddddeedddddeEeDededDeeededdedEEeDeeeddeedDddeddddEdeeddeedddDeDeDdDddedeeDddeeddDdeDdedEdddddddEedDdDEDedyeeeggeyg.ee.g...."
+      - "........gy.gededdddDeddeedDdDddddDeddDeDdddEdeddDdDdddDDddeedddddededdddddddeEdeedddDeeDdeDDdedDdedDdddddDeedDeddEdEdedDedddddDeddDeedDeDeDdeeedeDeddEedDdDDEdeeddeeDedDdddddddDDdedde.eegge.ee..e.e...."
+      - ".......ggeddeDeDdEdddedDddDeEEedEedddEdedDddedddddddeddddeDDdedeDeeeDdeddDddddddddedDddddddddddeeddDdDedDdedeedeeddDdEddEDddeeDddeddeddEDedededddeddeddedddDDdddDddeDdeeddDDeddDdeedDDeegeeeeey.gyegge.."
+      - ".....ee..deddddDddeeeddDdddddDEDdDddddddDdeddeDeddeEddeeDedeDdedeedddddddeddeedddDdDdedeEddedddDDdDddDDeeddddDEDddDeDeddeedEDeEddDDddedDdeDedDdDdedDeDdEEdddeDDdddddDdddedEdDdddEdeeedDd.ee.deEdddDggee."
+      - "eegggg.eeDedDeeeddDdDEdeedDdddeDdddEDddDdeddEdddddDedddDEdedDeddeedeDeddddededdDDDdddedDdeDEeddedeedDddededededdedeeEdDedeDeddDdeddDeeDdDddDdddddDdeeededDDdeeDdDddddeDedeeDddddeDdDddDdddDDdedDedeg.gy."
+      - "gg....ee..dDdddddedddddddeeddddDeddeEddDddddeDdEddddddDddeddddddddddeeddddededEdDdededDdEeeeddDdDDededDdDdeddDDdEeedededddDdEeddddddEDdddddddDedeDddddddeededdDeddDdDdddeddddDddeeeddeedeDeDEddddDdg...."
+      - ".......g.e.DdddeddDdeddedDddddDddeDdDdDdeeeEdDdddeDedeededeedededdeDedEeddDdddeddddeDDdDDddeDDdeeeeddddDeDddDEedeeEeEEeEdeddDdeededddddDddddedddeedddddEdddEDEDdedDddddedDeDddddEEeddddDddDddeeed.eg.g.."
+      - "........e.geededdedEdeeedDdeeedeeddedEEeEddedDdedeeedeedDeDededddddDddeedDDdEDddDDEdDeddedDddedDeeddedDdeDedDdDdeedDDdEeddEddedDdDdddddedDeDeeddedddedddddEdEddEDddDdDddedeeddddddddEddDe.geee.egge.ee.."
+      - "......eeg.ddddDDdDDdeedDeddddddddddDDeDEddddeDddDDdededdEDeDddDdDdddDDedDdeDDeedddddddddDDDdeddDdDeddeeddddeDeddddDdddDDeedddddddddeddeDddddDddDddeEdeeDedDdDddededdDDdddeeddDDeddeddeDee...ge.ey.eeeee."
+      - "....egeeeddddddDdeddedddeDEeDDeddEEdddddeDeddeddddedddeDdeDddedddeddDdeeDdEDEDdeddeeeedddddDeDdddeddededDdDddeddddededdDeEdeeDddddddeDDdDdeededededdddDddddedeDdedEDddDDddddddeEddEeeddde.g.Dddeddde..ey"
+      - ".egegeg.deddeeDeddeeDdededdddDDdeeDdEedeDdedEDDeDddDeeddDdddeDedEEeDDdDddeDededdDeDdddeddeedddeeddeddddddddedDddddddeDDdDdDddddDeDdedDDdddeedDeDeedDdeeEdddedDeddedEDdEedDdDdeeDdddddddDdeeedDddeDDeggg."
+      - ".g.eg.eygdddeddeeddedddDeddddddedDdDddeEeeEddeeDDdddDDDeddeEdDdddddDddDDddEdedDDdddedddddddDdedddddddeddeDdDEDddddEddddDdddDDddddddDDddddddDddddDedddDddededdEdDdDeDdDeeddddDddddDdDedddeddeeDEedeeDe..y"
+      - ".egggggg.eedDeDedDdddededddeddDdEEddddeDdeddeDeddEededEeddddDdEdedDDddDedDdeeEdDdEdddEDdddEddeEedddeddeEddddddddddEddedDDdddddDdddddDDdDdEddeDdddddddEddDeeeeeedDdEdddeddedddddedEDeDdddedededddddeeeg.."
+      - "......egyeeeDdddDDdeeededDeddEdDddDdeDdddDdedededddedDddedDDDdddeeedeeddddeDddDdddedededdDeDDeddededdDddddddDdddDeeDdDddedddDDDdddDdddddDedddddeddeeddDeddededddDeeDeddDdeeddddDEdedDdeeeddeDddDege.gg.."
+      - ".......gg.gddeddeddDdeeddddeeeddDddddeddeeededddddDddeeDededddedddDedddddDddDdeeedddeeddddeeDededdddeeEddDeededdddddeeEddeeedddedddeeedddeEdDDeDdddddDddDeeedEddddddDeedddDEeedddedDdedd.y..g.yegggeg..."
+      - ".......egeeddeedddddDeeeedeDdeDddeDdDddEeededdDeedddDDdDdedDdEdeEDeeedddedddDeddddddeDDdedEdDdeDDeddDDdDdeeedDeEdDdedDDddDddDDDDeedDddeddddDdDedEdddddeeddddDdeDeDddeddddddDDeedddDdDeDeey.geeggggegee.."
+      - ".......ggeDddddDDdddedDddddddeedddedddddddedDddedddddDdeDeEdDddEdddDDdddDdddedEddddDeDdddedDeDdeDdDddDdeDdedededdDddDeDDeDdddededddddddeddeDdeDeeedeedddDEDdeddeddeEdeDdDdddeeEdeddDdDD.e...geDeDdgg.g.."
+      - "....yeyg.dededDdeeddddEdDeEDdDdedDdDDdedeeeDDeDeDDdDDdEddddEdDeeDdeddDdddEDdddDDdDddddDddeeddEdedDdddDeDdddedDddDdddedddDeedeededddedeeDDddedDedDdEeeddedDddedDeddeededDdDddeeddEdDdeeddee.gddddddeee.g."
+      - ".......geeededeDDdedddeeEDedDddddeDDdeEddDDddeeedDeeedededdDDdedDDDddddEDddeededeeddeEddeeDddddddedDdddddDdDedeedEddDDddeddeeeDdDddddDedeDdeeDDeDdeDEDddddddEdeeEDdDddDeeDddededDDDdddEDDDddeddDdddeggg."
+      - ".........eegeeeDdddEegedeeeddeEeeddDddeeDdEDEeDeeeDdeddddDddddDdDdddDededDedDEDedeeEddeddeEDdeDddddddddedddeddEddddeeddedddDededdDdDdDDdedddeDdddddDEeeddDddedDEedeDdddEeddeDEddddDdDdddd.yeeEddee.eg..."
+      - ".........y.ee.deddy..g.dDDedddedDdddddeeDedEdddeddddDDddEedDdedDdeDdedddeDeddddDdDDdeddDdddDDdDdeededDDdDeddDedeDededdDedeEddeeEddedDddDdeedDeDdeddedddddddddddDdddddDeddddddddeddddDDdg.geygggyeeee...."
+      - "...........g.eddDeedDeDedDEeDddedeDddDeeddedDDeddddddeDDDddeEdDddDededddedddddddeeddeeedddDddddddedDdeDDdDeddedddedddddddddeDdddedEdddeddeeddedeDDEDdddedDeDdeEdedddDeedDeddDeDeeDeede.eg.egg.ggeyy....."
+      - ".........gee.dedeeddDdeDdeDeedeEdDdedEDdeddddDedDeddDeddddDeDdedeDeeddDeeddddddEededdDdDeddeDdeDddDddedeDEdEdDedeDDddddDEdddeDddeeeddeddddedeeDdeededdedDDddDDDddeDDdddddDddDdddddDdee.g.e.e.gygeg......"
+      - ".........egggddDdddeedddDDddeeDdedeDdDDDeddddedDdddddddddedeDddeeddeeeddddeddeddDEdDdedDdddddedEddddddddddDddDDdeeeDeeddDddDdedddddddDddddedDdddDEdeddddeDDeddDDdDdedeedDdeedDeeDddge...g.eeyg..eey....."
+      - "..........g.eDEdddeeggggeddedeDdddDeededdddddddddddDDedddedeedDddddedddddEdeddeDdDedddddeddEddddDddDdededDdDededddddeeDddddddeddeddeddedddeEedeedddddedddDdeDdddDdDdedDdddeEDdDDeddee.egegeegg.eeeeg...."
+      - "..........ggeyye.eye..eg.egDedDDededdddEddddDddDddDeddeeeedDddeDddeddDddddDdDedDdDdddeddeeDdEdEeeeDddDEdddddeeeeeeedddddDEDeddddDededddDeddddddddDeDdEeDddEeEeededDdeDDDeeeededDdeeD.e.gegeeeegg.eg....."
+      - "............g.g..e.ge.ygg..edDdddeDdDdDeDdeDddddeDedeDdddeeDddDeDeedddddddeddDdeddDedDeddddddedeEddDdddedDDdDDeddDdDddddddeeedddddDdeeeDDeDdedddeeEDeddeddddDdeEddddDddDDDdeedDdddedgge.eeeeeegy........"
+      - "...............yy......eg.eyddddddddeedDeeDddedeDDdddDeddeedeDeeddeDEEeDDdDeddeeDDDeededEddddddddddDdDDDedddeeDddddDdedddddedddDdEeedDdeEddDddDEddeDDedDDeDedddddddedddddddeDdDdDeDeeeg................."
+      - ".......................eegedDeedddddddDddDdeddeddeeedDddddDddDDDDDDddedddeDdddDeeDdddddddddddeedDddeeDdedeEDDEeDdddedDeDDdddeedddddedddDeeDeddDddedeedDdeddddDDedededddEddDeEddddgge...................."
+      - "................g.eg...e.egeddedDdddddeedDeddeDdeDeDEDEdDdDeddDddddEddddedddedeDdddddeDdeddDdDddDeddddeDdeddddeddeDeDdddeddeDdddddddddddeedeDddddddDddDdeDEeDDDededdeeee.gee.gege.e....................."
+      - "..............yy.y......e.eeeddddeeddgge.e.ddeDeeeeEdDddddDeDddddeeDeDdddddddddddedEeDDDdeeddDddedddededdedEddddeDdeededddDeDddDedEDDDdEEddeedDdDDdDDddDddDddDDddDdeeeggg.gegeg.ee......................"
+      - "...........................eeyeggeygg.gegeggeDDdddeddddddeedddEdeDDDdedeeddddEeddddDddddDdedeeddeDddEddeEddddddddeDdddeddedDddDdDdeDdddddddedddDdeedddedDddddddDdg.eee....e....ggg......................"
+      - ".............................eeeee.gegee.yeeedeDdedDdEdddddddDdeDddddEdddeDededdddDdDDdDEeeedddeEdddddDeEdDDDdddddDdDdDdddEDdDeddeDDDedddddeddEDdedDde.eddddeDdd.geg......ege.g.eg......................"
+      - "..............................eeeg.egyeeege.eddDdddddddeeDddDdeEDEeddedeDdddeddeddDdeededdDdDEdeEEdddeDdedDeedeDeeddddddddddDddedddDDDedDddDdDddde.gee.eggyDdDdy.g.eg.....geeg.ggy......................"
+      - "...............................eeeegg...ge..eddedddEDdddedEDeedEddeddEddedeeDddedddddDddddddEedEDDddeeDdddEeedeedDDdddeeeddDDEDdddddddeeDddddddegeeg.g.eeeeddddggeyeg......eee.e........................"
+      - "..............................ygeeegeeeggyeyegedddedddgeeggeeeyDeedeededDeDdDddddDddeDEddEdDdddddddddDDdddddddddDdDdDdDdDddDddDde.eggedeDdEDEeedg.yyg.eye.gddDDeygee...................................."
+      - "................................geg...........y.e..eegege.egeg..eDdeDdddeeddDddDddDdeedddeddDEddddddDDdDdDdeddDddddDedeDeddeded.eeggggDdddDdddDeeeegee.geege.g...g......................................"
+      - ".................................................geeey.e...eg.gegEddddDddeedddEdddDdddDedDddedddddddDdedEDDdedyeggggdDddeeDeddeggeg.e.EEdddDede.ggeggee.ygg.y.g........................................."
+      - "..................................................egege....ye.ey.dddEEdeddggggeDdddeedDeDddee.egegeEDDddDdeee.g.ggegedeDddddeddgeeg.gg.edDdedee.ey......................................................"
+      - ".................................................gg.e........y.e..ddDddgeee.gegee.edDdddggg.geeee..g.DdedeD.yee.eege.Ddddddeddgeegeey.eg..ge.yge........................................................"
+      - "..................................................ee...........eyeggege.........g..eeg.egeeee...egegggDedee...gggeg.geedddddeg.eg........gee............................................................"
+      - "..................................................................................geegeegegg.....e..e.eded.eg.ggg.eggg.ygg.e............................................................................"
+  - id: rock
+    _palette: camp
+    lines:
+      - "......P......"
+      - "..PPPPPPppp.."
+      - ".PPPPPPPpppp."
+      - "ppppppppppppp"
+      - "ppppppppppppp"
+      - "ppppppppppqqq"
+      - ".qqqqqqqqqqq."
+      - "..qqqqqqqqq.."
+  - id: rock-small
+    _palette: camp
+    lines:
+      - "........"
+      - ".PPPPpp."
+      - "pppppppp"
+      - "ppppppqq"
+      - ".qqqqqq."
+  # The fallen trunk, lying along the edge of the clearing, with its shadow; a short log end is cut from it with `crop`.
+  - id: log
+    _palette: camp
+    lines:
+      - "......................................................................................"
+      - "......................................................................................"
+      - "......................................................................................"
+      - "......................................................................................"
+      - "........................................................................LLLLw........."
+      - "....................................................................LLLLwLwLLL........"
+      - ".................................................................LLLLLLLLLLLlw........"
+      - ".............................................................LLwwLLwLLLLLllllll......."
+      - "..........................................................LLLLLLLLLLLwlllwlllll......."
+      - "......................................................LLLLwwLwLLwLllllllwwKlllll......"
+      - "...................................................LwLLLLLwLLLLllllllllllKKlllll......"
+      - "...............................................LLLLwLLwLLLLllllllwllllllllKKllll......"
+      - "............................................LLLLLLLLLLLLlllllllwlKKllllllllllwww......"
+      - "........................................LLwwLwLLLLLLlwlllKlllllllKlllwllwwwwwwww......"
+      - ".....................................LLwLLLLLLwLLllwlllwllllwllllKllllwwwwwwwww......."
+      - ".................................LLLLLwLLLLwLllwllwlllllKllwlwlwllwwwwwwwwwwwww......."
+      - "..............................LLLLLLLLLLLLlllllwwwwwwllllllllwlwwwwwwwwwwwwwwzzz......"
+      - "..........................LLLLLLLLwLLLlllllllllKKllllllllllwwwwwwwwwwwwwwzzzzzzz......"
+      - ".......................LLLwLLLLLLLLllllKlllwlllllKllllllwwwwwwwwwwwwwwzzzzzzzzz......."
+      - "....................wLLLwLwLLLLlllllllKKllllwlllKlllwwwwwwwwwwwwwwzzzzzzzzzz.........."
+      - "................LLLLLLLLLLLLlllllwlllwlKKllllllllwwwwwwwwwwwwwwzzzzzzzzz.............."
+      - ".............LLwLLLLLLLLllllwlllllllwllKlllllwwwwwwwwwwwwwwwzzzzzzzzz................."
+      - ".........LLLLLLLLLLLLlllwlwlllKwllllllllllwwwwwwwwwwwwwwzzzzzzzzz....................."
+      - ".......wwwwLLLLLLlllllKllwwwllKllllwlllwwwwwwwwwwwwwwzzzzzzzzz........................"
+      - ".......wRRRwLLlllllllKwllllllllKlllwwwwwwwwwwwwwwzzzzzzzzz............................"
+      - "......wRRRRRlllllllwlKllllllllwlwwwwwwwwwwwwwwzzzzzzzzz..............................."
+      - "......wRLLLRwKwllwlwlllKlwllwwwwwwwwwwwwwwzzzzzzzzz..................................."
+      - "......wRLLLLRlllllllwllllwwwwwwwwwwwwwwzzzzzzzzz......................................"
+      - "......wRLRRLRwllwllllwwwwwwwwwwwwwwzzzzzzzzz.........................................."
+      - "......wRLRRLRwllllwwwwwwwwwwwwwwzzzzzzzzz............................................."
+      - ".......RLLLLRwwwwwwwwwwwwwwwzzzzzzzzz................................................."
+      - ".......wRLLLRwwwwwwwwwwwwzzzzzzzzz...................................................."
+      - "........RRRRRwwwwwwwwzzzzzzzzz........................................................"
+      - "........wRRRwwwwwwzzzzzzzzz..........................................................."
+      - ".........wwwwwzzzzzzzzz..............................................................."
+      - "............zzzzzzzz.................................................................."
+      - "............zzzz......................................................................"
+      - "............z........................................................................."
+      - "......................................................................................"
+  # Firewood, charred at the top end.
+  - id: stick
+    _palette: camp
+    lines:
+      - "........................KK"
+      - ".....................KKKkk"
+      - "..................LKKkkkkk"
+      - "...............LLLlkkkkkkk"
+      - "...........LLLLllllkkkkk.."
+      - "........LLLlllllllwkk....."
+      - ".....LLLlllllllwww........"
+      - "..LLLllllllwwww..........."
+      - "RLllllllwww..............."
+      - "Rllllwww.................."
+      - "llwww....................."
+      - "ww........................"
+  # Flames. The other frames derive from this one or are drawn anew.
+  - id: flame-a
+    _palette: fire
+    lines:
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - ".................................r......................"
+      - "................................r......................."
+      - ".........................o.......o......................"
+      - "................................ror....................."
+      - "................................oor....................."
+      - ".............................r.roor....................."
+      - "...............................ooor....................."
+      - "..............................rooo......................"
+      - "..............................rooo......................"
+      - ".........................o...rooor......................"
+      - ".............................rooor......................"
+      - "............................roooor......................"
+      - "............................roooor......................"
+      - "........................o..rooooor......................"
+      - "...........................rooooor......................"
+      - "..........................rooooor......................."
+      - "..........................rooooor......................."
+      - ".........................roooooor......................."
+      - ".....................r...roooooor......................."
+      - "........................rooooooor......................."
+      - "........................rooooooor......................."
+      - ".......................rooooooor........................"
+      - ".......................rooooooor........................"
+      - "......................rrooooooor........................"
+      - "......................roooooooor........................"
+      - "....................r.rooyyyyoor........................"
+      - ".....................rooyyyyyoor........................"
+      - ".....................rooyyyyyoor........................"
+      - "...................rrrooyyyyoorr........................"
+      - "....................rooyyyyyoorr........................"
+      - "....................rooyyyyyoorr........................"
+      - "...................rrooyyyyyoor........................."
+      - "...................roooyyyyyoor........................."
+      - "...................oooyyyyyyoor........................."
+      - "..................roooyyyyyyoor........................."
+      - "..................ooooyyyyyyoor........................."
+      - ".................rooooyyyyyyoor........................."
+      - ".................rooooyyyyyyoorr........................"
+      - ".................oyyoyyyyyyyoorr....r..or..............."
+      - ".................oyyoyyyyyyyoorr.......oo..............."
+      - "................royyoyyyyyyyoooo....o..ror.............."
+      - "................royyoyyyyyyyooror......roor............."
+      - "................royyoyywwwyyooooo......royo............."
+      - "................royyoyywwwwyooooyr...r..oyor............"
+      - ".............r..roywyywwwwwyooooyor.....oyor............"
+      - ".............or.roywyywwwwwyyooooyo.....oyyo............"
+      - ".............oo.roywyywwwwwyyooroyor....oyyor..........."
+      - ".............oorroywyywwwwwyyooroyyor...oyyor..........."
+      - ".............ryoroywwywwwwwyyooroywoo..roywoo..........."
+      - ".............royroywwywwwwwyyoooooyyor.roywyo..........."
+      - ".............royoooywywwwwwwyoooroywoo.roywyor.........."
+      - "..............oyyooywwwwwwwwyyooroywyorroywyor.........."
+      - "..............oyyooywwwwwwwwyyooroywyooooywyor.........."
+      - "..............oywooywwwwwwwwyyooroywwyooywwyor.........."
+      - "..............oywyoywwwwwwwwyyooooywwyooywwyor.........."
+      - "..............oywyoywwywwwwwyyooooywwyooywwyor.........."
+      - "..............oywyoywwwwwwwwwyyoooywwyooywwyor.........."
+      - ".............roywyoywwwwwwwwwyyoooywwyyoywwyor.........."
+      - ".............roywyoywwwwwwwwwyyoooywwwyywwwyor.........."
+      - ".............oowwyoywwwwwwwwwyyoooywwwyywwwyor.........."
+      - "............roywwyoywwwwwwwwwyyoooywwwyywwwyor.........."
+      - "............roywwyoywwwwwwwwwwyyoyywwwyywwwyor.........."
+      - "............oywwwyyywwwwwwwwwwyyoywwwwyywwwyoo.........."
+      - "..........royywwwyywwwwwwwwwwwyyyywwwwywwwwyyoor........"
+      - "........rroyywwwwyywwwwwwwwwwwwyywwwwwywwwwwyyoor......."
+      - ".......rooyywwwwwywwwwwwwwwwwwwyywwwwwwwwwwwwyooor......"
+      - ".....rrooyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyooor....."
+      - "....rrooyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyooorr..."
+      - "..rroooyyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyyooorr.."
+      - ".rroooyyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyyooorrr"
+  # flame-a swaying: only changed pixels are redrawn, `=` keeps the others.
+  - id: flame-b
+    _sprite: flame-a
+    overrideLines:
+      "2": "=============================r=========================="
+      "4": "=================================.======================"
+      "5": "================================.======================="
+      "6": "=========================.===ro==.======================"
+      "7": "=============================ror=..====================="
+      "8": "=============================roo...====================="
+      "9": "==============================oorr.====================="
+      "10": "=============================ro=r..====================="
+      "11": "=============================ro==r======================"
+      "12": "=============================ro==r======================"
+      "13": "=========================.=============================="
+      "14": "=================================or====================="
+      "15": "============================.r===or====================="
+      "16": "=========================o==.r===or====================="
+      "17": "========================.==..r===or====================="
+      "18": "===========================..r===oor===================="
+      "19": "==========================...r==ooor===================="
+      "20": "==========================..r===ooor===================="
+      "21": "=========================...r===ooor===================="
+      "22": "=====================.===...r===ooor===================="
+      "23": "========================.=..r===ooor===================="
+      "24": "========================...rr===ooor===================="
+      "25": "=======================....r===oooor===================="
+      "26": "=======================....r===oooor===================="
+      "27": "======================.....r===oooor===================="
+      "28": "======================..=.r====oooor===================="
+      "29": "====================.=....rooyyyyoor===================="
+      "30": "=====================.....rooyyyyoor===================="
+      "31": "=====================....rrooyyyyoor===================="
+      "32": "===================..=...rooyyyyyoor===================="
+      "33": "====================.....rooyyyyyoorr==================="
+      "34": "====================....rrooyyyyyoor===================="
+      "35": "===================.....roo=yyyyyooro==================="
+      "36": "===================.....ooo=yyyyooor===================="
+      "37": "===================....rooo=yyyyoorr=r=================="
+      "38": "==================....rooo==yyyyoorr===================="
+      "39": "==================..r.o=oo==yyyyoorr===================="
+      "40": "=================....roooo==yyyyoor====================="
+      "41": "=================..r.==oo===yyyyoor====================="
+      "42": "=================...ro=oo===yyyyoorro==..==============="
+      "43": "=================...===oo===yyyyoorror=..==============="
+      "44": "================...r==oo====yyy=oor==o=...=============="
+      "45": "================..roy=oo====yyy=oor=oyo....============="
+      "46": "================..roy=ooyywwwyyy=or=roo=...============="
+      "47": "================..oow=ooy==wwyyyoor=royo....============"
+      "48": "==============r=.royw=oyy==wwyyyor===oyor...============"
+      "49": "================.royw=oyy==wwyyy=rr==oyy=r..============"
+      "50": "============r=r=.=oyw=oyy==wwyyy=rr.=roy=o...==========="
+      "51": "============o=r.=====ooy===wwyyyyor..royyor..==========="
+      "52": "===========roor.====yoyy===wwyyyyor..roywoo..==========="
+      "53": "===========ryor.======yy===wwyyyw=o...oyw=or.==========="
+      "54": "===========oyy=.r=yw==yy====wyyywyor..ooy=oo..=========="
+      "55": "===========oyy=.o=yw=yyy====w=yywyoo..=oywyor.=========="
+      "56": "===========oyw=ro=yw=yyy====w=y=yw=or.r=ywyor.=========="
+      "57": "===========rowyoo=yw=yy=====w=y=yw=oo.r===yo=.=========="
+      "58": "===========rowyoooyw=yy=====w=y=ywwyorr================="
+      "59": "===========roywoooyw=y======w=y=ywwyorr================="
+      "60": "===========royw=ooyw=yy=========yww=yor================="
+      "61": "===========royw=ooyw==y==========yw=yor======o=========="
+      "62": "===========roywwooyw==y==========yw=yoooy====or========="
+      "63": "===========royw=yoyw==y==========yw==yooy==wyor========="
+      "64": "===========royw=yoyw==y======w=y=yw==yooy==wyor========="
+      "65": "===========royw=yoyw==y===========w==yooy==wyor========="
+      "66": "===========r====yo=w=================yo=y==wy=r========="
+      "67": "=============w====w====================y===w============"
+      "68": "=========o========w====================y====w==========="
+      "69": "==============================================y===r====="
+      "70": "=====.=======================================w=y===r===="
+      "71": "==========y============================================="
+      "72": "==.===========================================w========="
+  # flame-b, flaring.
+  - id: flame-flash
+    _sprite: flame-b
+    _palette: fire-hot
+  - id: flame-c
+    _palette: fire
+    lines:
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - ".......................r................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - ".......................o................................"
+      - ".......................or.r............................."
+      - ".......................ror.............................."
+      - ".......................roo.............................."
+      - ".......................roor............................."
+      - ".......................rooor...rr......................."
+      - ".......................rooor............................"
+      - "........................oooor..........................."
+      - "........................roooo..........................."
+      - "........................roooor.........................."
+      - "........................rooooor..o......................"
+      - "........................rooooor........................."
+      - ".........................rooooor........................"
+      - ".........................rooooor........................"
+      - ".........................roooooor......................."
+      - ".........................roooooor......................."
+      - ".........................rooooooor......................"
+      - "..........................royyyyor......................"
+      - "..........................rooyyyoor....................."
+      - "..........................rooyyyoor....................."
+      - "..........................rooyyyyoor...................."
+      - "..........................rooyyyyoor.r.................."
+      - "..........................rooyyyyyorr.o................."
+      - "..........................rooyyyyyoor..................."
+      - "..........................rooyyyyyoor..................."
+      - "..........................rooyyyyyoorr.................."
+      - "..........................roooyyyyyoor.................."
+      - "..........................roooyyyyyoor.................."
+      - "..........................roooyyyyyoorr................."
+      - "..........................roooyyyyyoorr................."
+      - "..........................rooyyyyyyyoor................."
+      - "..........................rooyyyyyyyoor................."
+      - "..........................rooyyyyyyyoor................."
+      - "..........................rooyyyyyyyoorr................"
+      - ".....................r..rrrooyywwwyyoorr................"
+      - ".......................rorrooyywwwyyoorr................"
+      - "................r......oorrooyywwwywyorr................"
+      - ".................r....ryoroooywwwwyyyorr................"
+      - ".....................royrrooyywwwwyywooro..............."
+      - "....................royorrooyywwwwyywyor................"
+      - "....................oyyorrooyywwwwyywyor................"
+      - "...................roworroooyywwwwyywyorr..............."
+      - "..................royyorroooywwwwwyywwyo................"
+      - ".................roywyorrooyywwwwwyywwyor..............."
+      - "................royyyorrrooyywwwwwyywwyor..............."
+      - "...............royywyorroooyywwwwwyywwyor..............."
+      - "..............royyywyorroooyywwwwwyywwwyo..............."
+      - ".............royyywwyorrooyywwwwwwyywwwyor.............."
+      - "............royyoywwyorrooyywwwwwwyywwywyo.............."
+      - "...........roywyoywwyoroooyywwwwwwyywwywyor............."
+      - "..........roywyooywwyoroooyywwwwwwyywwywwyo............."
+      - ".........roywwyoywwwyorooyywwwwwwwywwwywwyor............"
+      - "........roywwwyoywwwyorooyywwwwwwwywwwywwyor............"
+      - "........roywwyooywwwyooooyywwwwwwwywwwywwwyor..........."
+      - ".......royywwyooywwwyooooyywwwwwwwywwwywwwyor..........."
+      - "......rooywwwwyoywwwwyooyywwwwwwwwwwwwywwwwyor.........."
+      - "....rrooywwwwwyywwwwwyyyyywwwwwwwwwwwwwwwwwyyorr........"
+      - "...rrooyywwwwwwywwwwwwyyywwwwwwwwwwwwwwwwwwwyooor......."
+      - "..rrooyywwwwwwwywwwwwwyyywwwwwwwwwwwwwwwwwwwyyooor......"
+      - ".rroooyywwwwwwwwwwwwwwwywwwwwwwwwwwwwwwwwwwwwyyooor....."
+      - "rooooyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyyooorr..."
+      - "ooooyyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyyooorr.."
+  - id: flame-d
+    _palette: fire
+    lines:
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "............................o...o......................."
+      - "........................................................"
+      - "............................o..........................."
+      - "........................................................"
+      - "........................................................"
+      - "........................................................"
+      - "...............................rr......................."
+      - "............................o.ror......................."
+      - "..............................ror......................."
+      - ".............................roor......................."
+      - ".............................roor......................."
+      - ".............................ooor......................."
+      - "............................rooor......................."
+      - "............................rooor......................."
+      - "...........................roooor......................."
+      - "..........................rroooor......................."
+      - "...........................ooooor......................."
+      - "..........................rooooor......................."
+      - "..........................rooooor......................."
+      - ".........................roooooor......................."
+      - "......................r..roooooor......................."
+      - "........................rroyyyoor......................."
+      - "........................rooyyyoor......................."
+      - "........................rooyyyoor......................."
+      - ".......................rooyyyyoor......................."
+      - ".......................rooyyyyoor......................."
+      - ".......................rooyyyyoor......................."
+      - "....................r.rooyyyyyoor......................."
+      - "......................rooyyyyyoor......................."
+      - "......................rooyyyyyoor......................."
+      - "...................r.rrooyyyyyoor......................."
+      - ".....................rooyyyyyooor......................."
+      - ".....................rooyyyyyooor......................."
+      - "....................rrooyyyyyooor.o....................."
+      - "...............r....roooyyyyyooorroo...................."
+      - "..................rorooyyyyyyyooroo....................."
+      - "..................oorooyyyyyyyooroo....................."
+      - ".................roorooyyyyyyyooroo....................."
+      - ".................ryorooyywwwyyoooyor...................."
+      - "................royorooyywwwyyoooyor...................."
+      - "................royooooywwwwyyoooyor...................."
+      - "...............royoooooywwwwyyoooyyr...................."
+      - "...............royooyoyywwwwyyoooyyo.....r.............."
+      - "..............royyoroyyywwwwyyoooyyo..ror..............."
+      - "..............royyoroyyywwwwyyoooyyor..oo..............."
+      - ".............roywyoroyyywwwwwyoooywor..ryo.............."
+      - ".............ooyyooroowywwwwwyyooywyo..royr............."
+      - "............roywyorrooyywwwwwyyooywyor..oyor............"
+      - "............roywyorrooyywwwwwyyooywyor..ryyo............"
+      - "...........roywwyorrooywwwwwwyyooywwor..rowor..........."
+      - "...........roywwyorooywwwwwwwyyooywwyo..royyo..........."
+      - "...........ooywwyorooywwwwwwwyyooywwyor.royyor.........."
+      - "..........roywwwyorooywwwwwwwwyyoowwyor..oywyo.........."
+      - "..........roywwyoorooywwwwwwwwyyoowwwoo..oywyo.........."
+      - "..........ooywwyooroywwwwwwwwwyyooywwyor.oywyor........."
+      - ".........rooywwyooooywwwwwwwwwyyooywwyorroywwor........."
+      - ".........royywwyyooyywwywwwwwwyyooywwyorroywwoo........."
+      - ".........roywwwyyooywwwywwwwwwyyooywwyooroywwyo........."
+      - ".........roywwwwyooywwwywwwwwwwyyoywwwyoroywwyo........."
+      - "........royywwwwyoywwwwwwwwwwwwyyywwwwyooywwwyoor......."
+      - "......rrooywwwwwyywwwwwwwwwwwwwwyywwwwwyyywwwwyoor......"
+      - ".....rrooyywwwwwwwwwwwwwwwwwwwwwyywwwwwyywwwwwyyoor....."
+      - "....roooyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwywwwwwwyyoor...."
+      - "...roooyyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyooorr.."
+      - ".rrooooyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyooorr."
+      - "rrooooyyywwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwyyoooor"
+  # The bed of embers under the wood.
+  - id: coals
+    _palette: fire
+    lines:
+      - "........................................"
+      - ".......okoccrkkckrcckkrocokrkccor......."
+      - "...kkckkyokkroorrccokrrkrkyrccyckrokr..."
+      - ".crcycyykorkckkkcokcocrcrcyckkkkokorckk."
+      - "ocrkkcckrcckckccrykckoccckokkcorokcrkkkk"
+      - ".kkorrccokkkkkkrkckrkcrrokckokocrroocro."
+      - "...rcorcccokykkrrkkcrcccoorkccrkrccyc..."
+  - id: coals-hot
+    _sprite: coals
+    _palette: fire-hot
+  - id: spark
+    _palette: fire
+    lines:
+      - "e"
+  - id: spark-long
+    _palette: fire
+    lines:
+      - "y"
+      - "e"
+  # Firelight on the ground.
+  - id: glow
+    _palette: glow
+    lines:
+      - ".............................................................AAAAAAAAAAAAAAAAAAAAAAAAAAAA............................................................."
+      - "...................................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA..................................................."
+      - "............................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA............................................"
+      - ".......................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA......................................."
+      - "..................................AAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAAAAAAAAA.................................."
+      - "..............................AAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAAAAA.............................."
+      - "...........................AAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAA..........................."
+      - "........................AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAA........................"
+      - ".....................AAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAA....................."
+      - "...................AAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA..................."
+      - "................AAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA................"
+      - "..............AAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA.............."
+      - ".............AAAAAAAAAAAABBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBAAAAAAAAAAAA............."
+      - "...........AAAAAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBAAAAAAAAAAAA..........."
+      - ".........AAAAAAAAAAAABBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBAAAAAAAAAAAA........."
+      - "........AAAAAAAAAAABBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBAAAAAAAAAAA........"
+      - ".......AAAAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAAAA......."
+      - ".....AAAAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAAAA....."
+      - "....AAAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAAA...."
+      - "....AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA...."
+      - "...AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA..."
+      - "..AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA.."
+      - ".AAAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAAA."
+      - ".AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA."
+      - ".AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA."
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - "AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA"
+      - ".AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA."
+      - ".AAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAA."
+      - ".AAAAAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAAAAA."
+      - "..AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA.."
+      - "...AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA..."
+      - "....AAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAA...."
+      - "....AAAAAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDEEEEEEEEEEDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAAAAA...."
+      - ".....AAAAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAAAA....."
+      - ".......AAAAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAAAA......."
+      - "........AAAAAAAAAAABBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBAAAAAAAAAAA........"
+      - ".........AAAAAAAAAAAABBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBAAAAAAAAAAAA........."
+      - "...........AAAAAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBAAAAAAAAAAAA..........."
+      - ".............AAAAAAAAAAAABBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBAAAAAAAAAAAA............."
+      - "..............AAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA.............."
+      - "................AAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA................"
+      - "...................AAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA..................."
+      - ".....................AAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAA....................."
+      - "........................AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAA........................"
+      - "...........................AAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAA..........................."
+      - "..............................AAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAAAAA.............................."
+      - "..................................AAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAAAAAAAAAAA.................................."
+      - ".......................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA......................................."
+      - "............................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA............................................"
+      - "...................................................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA..................................................."
+      - ".............................................................AAAAAAAAAAAAAAAAAAAAAAAAAAAA............................................................."
+  - id: glow-bright
+    _sprite: glow
+    _palette: glow-bright
+  # Firelight in the air around the flames.
+  - id: glow-air
+    _palette: glow
+    lines:
+      - ".......................................AAAAAAAAAAAA......................................."
+      - "...................................AAAAAAAAAAAAAAAAAAAA..................................."
+      - "................................AAAAAAAAAAAAAAAAAAAAAAAAAA................................"
+      - ".............................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA............................."
+      - "...........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA..........................."
+      - ".........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........................."
+      - "........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........................"
+      - "......................AAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAAAAAAAAAAAAA......................"
+      - ".....................AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAA....................."
+      - "....................AAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA...................."
+      - "...................AAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA..................."
+      - ".................AAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA................."
+      - "................AAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAA................"
+      - "...............AAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAA..............."
+      - "...............AAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAA..............."
+      - "..............AAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAA.............."
+      - ".............AAAAAAAAABBBBBBBBBBBBBBBBBBCCCCCCCCCCBBBBBBBBBBBBBBBBBBAAAAAAAAA............."
+      - "............AAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBAAAAAAAAA............"
+      - "...........AAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAA..........."
+      - "...........AAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAA..........."
+      - "..........AAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAA.........."
+      - ".........AAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAA........."
+      - ".........AAAAAAAABBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBAAAAAAAA........."
+      - "........AAAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAAA........"
+      - "........AAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAA........"
+      - ".......AAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAA......."
+      - ".......AAAAAAABBBBBBBBBCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCBBBBBBBBBAAAAAAA......."
+      - "......AAAAAAABBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBAAAAAAA......"
+      - "......AAAAAAABBBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBBAAAAAAA......"
+      - ".....AAAAAAABBBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBBAAAAAAA....."
+      - ".....AAAAAAABBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBAAAAAAA....."
+      - "....AAAAAAABBBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBBAAAAAAA...."
+      - "....AAAAAAABBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBAAAAAAA...."
+      - "....AAAAAABBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBAAAAAA...."
+      - "...AAAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAAA..."
+      - "...AAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAA..."
+      - "...AAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAA..."
+      - "..AAAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDDDEEEEEEEEEEEEDDDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAAA.."
+      - "..AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDDEEEEEEEEEEEEEEEEDDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA.."
+      - "..AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA.."
+      - "..AAAAAABBBBBBBCCCCCCCCDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA.."
+      - ".AAAAAAABBBBBBBCCCCCCCCDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAAA."
+      - ".AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBBCCCCCCCDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDCCCCCCCBBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBCCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAA."
+      - "AAAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAAA"
+      - "AAAAAABBBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA"
+      - "AAAAAABBBBBBBBCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCBBBBBBBBAAAAAA"
+      - "AAAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAAA"
+      - ".AAAAAABBBBBBBCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBCCCCCCCCDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBCCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBBCCCCCCCDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDCCCCCCCBBBBBBBBAAAAAA."
+      - ".AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA."
+      - ".AAAAAAABBBBBBBCCCCCCCCDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAAA."
+      - "..AAAAAABBBBBBBCCCCCCCCDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDCCCCCCCCBBBBBBBAAAAAA.."
+      - "..AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA.."
+      - "..AAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDDEEEEEEEEEEEEEEEEDDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAA.."
+      - "..AAAAAAABBBBBBBBCCCCCCCCDDDDDDDDDDDDDDEEEEEEEEEEEEDDDDDDDDDDDDDDCCCCCCCCBBBBBBBBAAAAAAA.."
+      - "...AAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDEEEEEEEEDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAA..."
+      - "...AAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAA..."
+      - "...AAAAAAABBBBBBBBCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCBBBBBBBBAAAAAAA..."
+      - "....AAAAAABBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBAAAAAA...."
+      - "....AAAAAAABBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBAAAAAAA...."
+      - "....AAAAAAABBBBBBBBBCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCBBBBBBBBBAAAAAAA...."
+      - ".....AAAAAAABBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBAAAAAAA....."
+      - ".....AAAAAAABBBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBBAAAAAAA....."
+      - "......AAAAAAABBBBBBBBBCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCBBBBBBBBBAAAAAAA......"
+      - "......AAAAAAABBBBBBBBBBCCCCCCCCCCCCDDDDDDDDDDDDDDDDDDDDCCCCCCCCCCCCBBBBBBBBBBAAAAAAA......"
+      - ".......AAAAAAABBBBBBBBBCCCCCCCCCCCCCCDDDDDDDDDDDDDDDDCCCCCCCCCCCCCCBBBBBBBBBAAAAAAA......."
+      - ".......AAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAA......."
+      - "........AAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAA........"
+      - "........AAAAAAAABBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBAAAAAAAA........"
+      - ".........AAAAAAAABBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBAAAAAAAA........."
+      - ".........AAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAA........."
+      - "..........AAAAAAAABBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBAAAAAAAA.........."
+      - "...........AAAAAAAABBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBAAAAAAAA..........."
+      - "...........AAAAAAAAABBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBAAAAAAAAA..........."
+      - "............AAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBAAAAAAAAA............"
+      - ".............AAAAAAAAABBBBBBBBBBBBBBBBBBCCCCCCCCCCBBBBBBBBBBBBBBBBBBAAAAAAAAA............."
+      - "..............AAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAA.............."
+      - "...............AAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAA..............."
+      - "...............AAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAA..............."
+      - "................AAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAA................"
+      - ".................AAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA................."
+      - "...................AAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA..................."
+      - "....................AAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA...................."
+      - ".....................AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBAAAAAAAAAAAAAAAA....................."
+      - "......................AAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAAAAAAAAAAAAA......................"
+      - "........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........................"
+      - ".........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA........................."
+      - "...........................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA..........................."
+      - ".............................AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA............................."
+      - "................................AAAAAAAAAAAAAAAAAAAAAAAAAA................................"
+      - "...................................AAAAAAAAAAAAAAAAAAAA..................................."
+      - ".......................................AAAAAAAAAAAA......................................."
+  # Top-left corner of the vignette; the other three are flipped or rotated.
+  - id: vignette-corner
+    _palette: shade
+    lines:
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+      - "jjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "jjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "jjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "jjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      - "jjjjjiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "jjjjjiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "jjjjjiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "jjjjjiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "jjjjjiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "jjjjjiiiihhhhhgggggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "jjjjjiiiihhhhhgggggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "jjjjjiiiihhhhhgggggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "jjjjjiiiihhhhhgggggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "jjjjjiiiihhhhhggggffffffffffffffffffffffffffffffffffffffffffffff"
+      - "jjjjjiiiihhhhhggggffffffffffffffffffffffffffffffffffffffffffffff"
+      - "jjjjjiiiihhhhhggggffffffffffffffffffffffffffffffffffffffffffffff"
+      - "jjjjjiiiihhhhhggggffffffffffffffffffffffffffffffffffffffffffffff"
+      - "jjjjjiiiihhhhhggggffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      - "jjjjjiiiihhhhhggggffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      - "jjjjjiiiihhhhhggggffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      - "jjjjjiiiihhhhhggggffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      - "jjjjjiiiihhhhhggggffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddddddddddddddddddddddddddddddddddd"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddddddddddddddddddddddddddddddddddd"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddddddddddddddddddddddddddddddddddd"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddddddddddddddddddddddddddddddddddd"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddccccccccccccccccccccccccccccccccc"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddccccccccccccccccccccccccccccccccc"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddccccccccccccccccccccccccccccccccc"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddccccccccccccccccccccccccccccccccc"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddccccccccccccccccccccccccccccccccc"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaaaaaaaaaaaaaaaaaaaaaa"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaaaaaaaaaaaaaaaaaaaaaa"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaaaaaaaaaaaaaaaaaaaaaa"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaaaaaaaaaaaaaaaaaaaaaa"
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+  # One row of the vignette; tiled along the left edge, rotated for top and bottom.
+  - id: vignette-edge
+    _palette: shade
+    lines:
+      - "jjjjjiiiihhhhhggggffffeeeeeddddcccccbbbbaaaa...................."
+
+flipbooks:
+  # 10 frame-units at 10 fps: the flames loop every second.
+  - id: flames
+    width: 56
+    height: 74
+    fps: 10
+    frames:
+      - { _sprite: flame-a, coordinates: [0, 0], duration: 2 }
+      - { _sprite: flame-b, coordinates: [0, 0], duration: 2 }
+      - { _sprite: flame-c, coordinates: [0, 0], duration: 1 }
+      - { _sprite: flame-flash, coordinates: [0, 0], duration: 1 }
+      - { _sprite: flame-a, coordinates: [0, 0], duration: 2, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: flame-d, coordinates: [0, 0], duration: 2 }
+  # The embers pulse at their own 5 fps.
+  - id: embers
+    width: 40
+    height: 7
+    fps: 5
+    frames:
+      - { _sprite: coals, coordinates: [0, 0], duration: 3 }
+      - { _sprite: coals-hot, coordinates: [0, 0], duration: 2 }
+
+panels:
+  # Farthest plane: gradient, two star fields, clouds.
+  - id: sky
+    width: 256
+    height: 256
+    elements:
+      - _sprite: sky
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 256, height: 160 }]
+      - { _sprite: stars, coordinates: [0, 0], transforms: [{ kind: tile, width: 256, height: 140 }] }
+      - { _sprite: stars-dim, coordinates: [7, 3], transforms: [{ kind: tile, width: 249, height: 137 }] }
+      - { _sprite: dark-clouds, coordinates: [0, 34], zIndex: 1, transforms: [{ kind: tile, width: 256, height: 26 }] }
+      - { _sprite: cloud, coordinates: [20, 80], zIndex: 1 }
+      - { _sprite: cloud, coordinates: [118, 92], zIndex: 1, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: cloud-small, coordinates: [176, 82], zIndex: 1 }
+      - { _sprite: cloud-small, coordinates: [64, 98], zIndex: 1, transforms: [{ kind: flip, axis: x }] }
+  # Bright stars that the `twinkle` timeline switches on and off.
+  - id: bright-stars
+    width: 256
+    height: 256
+    elements:
+      - { id: s0, _sprite: star-bright, coordinates: [30, 18] }
+      - { id: s1, _sprite: star-bright, coordinates: [88, 30] }
+      - { id: s2, _sprite: star-bright, coordinates: [150, 12] }
+      - { id: s3, _sprite: star-bright, coordinates: [212, 40] }
+      - { id: s4, _sprite: star-bright, coordinates: [120, 62] }
+      - { id: s5, _sprite: star-bright, coordinates: [60, 70] }
+      - { id: s6, _sprite: star-bright, coordinates: [240, 16] }
+      - { id: s7, _sprite: star-bright, coordinates: [180, 66] }
+  - id: mountains
+    width: 256
+    height: 256
+    elements:
+      - _sprite: mountain-far
+        coordinates: [150, 94]
+        transforms: [{ kind: flip, axis: x }, { kind: scale, width: 110, height: 51 }]
+      - { _sprite: mountain, coordinates: [40, 78], zIndex: 1 }
+      - { _sprite: haze, coordinates: [0, 128], zIndex: 2 }
+  # Two rows of distant pines, each one tile repeated across the picture.
+  - id: far-forest
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: pines-far, coordinates: [-20, 118], transforms: [{ kind: tile, width: 300, height: 46 }] }
+      - _sprite: pines-mid
+        coordinates: [-5, 108]
+        zIndex: 1
+        transforms: [{ kind: scale, width: 80, height: 58 }, { kind: tile, width: 270, height: 58 }]
+  - id: ground
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: grass, coordinates: [0, 163], transforms: [{ kind: tile, width: 256, height: 93 }] }
+      - { _sprite: grass-edge, coordinates: [0, 159], transforms: [{ kind: tile, width: 256, height: 5 }] }
+      - { _sprite: clearing, coordinates: [46, 182], zIndex: 1 }
+  # The big tree on the left and the dark pines on the right.
+  - id: near-trees
+    width: 256
+    height: 256
+    elements:
+      - _sprite: bark
+        coordinates: [26, 0]
+        transforms: [{ kind: scale, width: 18, height: 190 }]
+      - { _sprite: moss, coordinates: [22, 100] }
+      - { _sprite: moss, coordinates: [22, 50], transforms: [{ kind: crop, area: [0, 26, 26, 34] }, { kind: flip, axis: x }] }
+      - { _sprite: canopy, coordinates: [-16, -10], zIndex: 1 }
+      - { _sprite: canopy, coordinates: [40, -40], zIndex: 1, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: branch, coordinates: [42, 52] }
+      - { _sprite: branch, coordinates: [-4, 84], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: pine-tall, coordinates: [196, 46] }
+      - { _sprite: pine-big, coordinates: [214, 26], zIndex: 1, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: canopy, coordinates: [180, -50], zIndex: 2, transforms: [{ kind: flip, axis: x }, { kind: flip, axis: y }] }
+      - { _sprite: bush, coordinates: [0, 176], zIndex: 2 }
+      - { _sprite: bush, coordinates: [222, 172], zIndex: 2, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: bush, coordinates: [188, 178], zIndex: 2 }
+  # Fallen trunk and the stones behind the fire.
+  - id: camp
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: log, coordinates: [42, 176] }
+      - { _sprite: log, coordinates: [224, 202], transforms: [{ kind: crop, area: [6, 22, 17, 15] }, { kind: flip, axis: x }] }
+      - { _sprite: rock, coordinates: [128, 206] }
+      - { _sprite: rock-small, coordinates: [143, 203] }
+      - { _sprite: rock, coordinates: [180, 204], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: rock-small, coordinates: [196, 208], transforms: [{ kind: rotate, degrees: 90 }] }
+      - { _sprite: rock-small, coordinates: [90, 214] }
+      - { _sprite: rock, coordinates: [70, 236], transforms: [{ kind: rotate, degrees: 180 }] }
+      - { _sprite: rock-small, coordinates: [210, 238] }
+  # The fire: light, wood, embers, flames and sparks. The `fire` timeline animates it.
+  - id: campfire
+    width: 256
+    height: 256
+    elements:
+      - { id: glow, _sprite: glow, coordinates: [88, 190] }
+      - { id: glow-bright, _sprite: glow-bright, coordinates: [88, 190], visible: false }
+      - { _sprite: glow-air, coordinates: [118, 112] }
+      - { _sprite: stick, coordinates: [140, 200], zIndex: 1, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: stick, coordinates: [164, 200], zIndex: 1 }
+      - { id: embers, _flipbook: embers, coordinates: [143, 208], zIndex: 2 }
+      - { id: flames, _flipbook: flames, coordinates: [135, 139], zIndex: 3 }
+      - { _sprite: stick, coordinates: [136, 206], zIndex: 4 }
+      - { _sprite: stick, coordinates: [170, 206], zIndex: 4, transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: stick, coordinates: [150, 211], zIndex: 4, transforms: [{ kind: rotate, degrees: 90 }, { kind: rotate, degrees: 90 }] }
+      - { id: k0, _sprite: spark, coordinates: [160, 180], zIndex: 1 }
+      - { id: k1, _sprite: spark-long, coordinates: [170, 176], zIndex: 1, visible: false }
+      - { id: k2, _sprite: spark, coordinates: [156, 170], zIndex: 1, visible: false }
+      - { id: k3, _sprite: spark, coordinates: [166, 160], zIndex: 1, visible: false }
+      - { id: k4, _sprite: spark-long, coordinates: [158, 150], zIndex: 1 }
+      - { id: k5, _sprite: spark, coordinates: [172, 168], zIndex: 1, visible: false }
+      - { id: k6, _sprite: spark, coordinates: [150, 124], zIndex: 1 }
+      - { id: k7, _sprite: spark, coordinates: [176, 128], zIndex: 1 }
+  # Stones in front of the fire.
+  - id: front-stones
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: rock, coordinates: [134, 220], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: rock-small, coordinates: [150, 224] }
+      - { _sprite: rock, coordinates: [160, 222] }
+      - { _sprite: rock-small, coordinates: [176, 221], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: rock, coordinates: [186, 216], transforms: [{ kind: rotate, degrees: 180 }] }
+      - { _sprite: rock-small, coordinates: [124, 216], transforms: [{ kind: rotate, degrees: 270 }] }
+  # Darker corners and edges: one corner and one edge strip, flipped, rotated and tiled.
+  - id: vignette
+    width: 256
+    height: 256
+    elements:
+      - { _sprite: vignette-corner, coordinates: [0, 0] }
+      - { _sprite: vignette-corner, coordinates: [192, 0], transforms: [{ kind: flip, axis: x }] }
+      - { _sprite: vignette-corner, coordinates: [0, 192], transforms: [{ kind: flip, axis: y }] }
+      - { _sprite: vignette-corner, coordinates: [192, 192], transforms: [{ kind: rotate, degrees: 180 }] }
+      - _sprite: vignette-edge
+        coordinates: [0, 64]
+        transforms: [{ kind: tile, width: 64, height: 128 }]
+      - _sprite: vignette-edge
+        coordinates: [192, 64]
+        transforms: [{ kind: flip, axis: x }, { kind: tile, width: 64, height: 128 }]
+      - _sprite: vignette-edge
+        coordinates: [64, 0]
+        transforms: [{ kind: rotate, degrees: 90 }, { kind: tile, width: 128, height: 64 }]
+      - _sprite: vignette-edge
+        coordinates: [64, 192]
+        transforms: [{ kind: rotate, degrees: 270 }, { kind: tile, width: 128, height: 64 }]
+
+timelines:
+  # 8 frame-units at 4 fps: each star blinks once every 2 s.
+  - id: twinkle
+    _panel: bright-stars
+    fps: 4
+    duration: 8
+    transitions:
+      - { kind: setVisible, _element: s0, value: false, at: 0 }
+      - { kind: setVisible, _element: s0, value: true, at: 1 }
+      - { kind: setVisible, _element: s1, value: false, at: 3 }
+      - { kind: setVisible, _element: s1, value: true, at: 5 }
+      - { kind: setVisible, _element: s2, value: false, at: 6 }
+      - { kind: setVisible, _element: s2, value: true, at: 7 }
+      - { kind: setVisible, _element: s3, value: false, at: 1 }
+      - { kind: setVisible, _element: s3, value: true, at: 3 }
+      - { kind: setVisible, _element: s4, value: false, at: 4 }
+      - { kind: setVisible, _element: s4, value: true, at: 5 }
+      - { kind: setVisible, _element: s5, value: false, at: 7 }
+      - { kind: setVisible, _element: s5, value: true, at: 1 }
+      - { kind: setVisible, _element: s6, value: false, at: 2 }
+      - { kind: setVisible, _element: s6, value: true, at: 3 }
+      - { kind: setVisible, _element: s7, value: false, at: 5 }
+      - { kind: setVisible, _element: s7, value: true, at: 7 }
+  # 20 frame-units at 10 fps: 2 s, twice the flames' loop.
+  - id: fire
+    _panel: campfire
+    fps: 10
+    duration: 20
+    transitions:
+      # The light flares now and then.
+      - { kind: setVisible, _element: glow-bright, value: true, at: 3 }
+      - { kind: setVisible, _element: glow-bright, value: false, at: 5 }
+      - { kind: setVisible, _element: glow-bright, value: true, at: 13 }
+      - { kind: setVisible, _element: glow-bright, value: false, at: 14 }
+      - { kind: setVisible, _element: glow-bright, value: true, at: 17 }
+      - { kind: setVisible, _element: glow-bright, value: false, at: 19 }
+      # In the second half the flames play mirrored and from another frame.
+      - { kind: appendTransforms, _element: flames, transforms: [{ kind: flip, axis: x }], at: 10 }
+      - { kind: seekFlipbook, _element: flames, frameIndex: 2, at: 10 }
+      - { kind: resetTransforms, _element: flames, at: 16 }
+      # The embers skip ahead to glow out of step with the flames.
+      - { kind: seekFlipbook, _element: embers, frameIndex: 1, at: 7 }
+      # Sparks rise and drift. They start behind the flames and come to the
+      # front once above them.
+      - { kind: moveTo, _element: k0, coordinates: [150, 110], start: 0, duration: 12 }
+      - { kind: moveToZ, _element: k0, value: 5, at: 3 }
+      - { kind: setVisible, _element: k0, value: false, at: 12 }
+      - { kind: setVisible, _element: k1, value: true, at: 3 }
+      - { kind: moveTo, _element: k1, coordinates: [184, 96], start: 3, duration: 14 }
+      - { kind: moveToZ, _element: k1, value: 5, at: 6 }
+      - { kind: setVisible, _element: k1, value: false, at: 17 }
+      - { kind: setVisible, _element: k2, value: true, at: 6 }
+      - { kind: moveTo, _element: k2, coordinates: [140, 92], start: 6, duration: 13 }
+      - { kind: moveToZ, _element: k2, value: 5, at: 9 }
+      - { kind: setVisible, _element: k2, value: false, at: 19 }
+      - { kind: setVisible, _element: k3, value: true, at: 9 }
+      - { kind: moveTo, _element: k3, coordinates: [176, 120], start: 9, duration: 8 }
+      - { kind: moveToZ, _element: k3, value: 5, at: 12 }
+      - { kind: setVisible, _element: k3, value: false, at: 17 }
+      - { kind: moveTo, _element: k4, coordinates: [148, 100], start: 0, duration: 7 }
+      - { kind: setVisible, _element: k4, value: false, at: 7 }
+      - { kind: setVisible, _element: k5, value: true, at: 12 }
+      - { kind: moveTo, _element: k5, coordinates: [196, 104], start: 12, duration: 8 }
+      - { kind: moveToZ, _element: k5, value: 5, at: 15 }
+      - { kind: moveTo, _element: k6, coordinates: [140, 70], start: 0, duration: 10 }
+      - { kind: setVisible, _element: k6, value: false, at: 10 }
+      - { kind: moveTo, _element: k7, coordinates: [190, 80], start: 0, duration: 9 }
+      - { kind: setVisible, _element: k7, value: false, at: 9 }
+
+scenes:
+  - id: campfire
+    width: 256
+    height: 256
+    layers:
+      - { _panel: sky, coordinates: [0, 0], zIndex: 0 }
+      - { _timeline: twinkle, coordinates: [0, 0], zIndex: 1 }
+      - { _panel: mountains, coordinates: [0, 0], zIndex: 2 }
+      - { _panel: far-forest, coordinates: [0, 0], zIndex: 3 }
+      - { _panel: ground, coordinates: [0, 0], zIndex: 4 }
+      - { _panel: near-trees, coordinates: [0, 0], zIndex: 5 }
+      - { _panel: camp, coordinates: [0, 0], zIndex: 6 }
+      - { _timeline: fire, coordinates: [0, 0], zIndex: 7 }
+      - { _panel: front-stones, coordinates: [0, 0], zIndex: 8 }
+      - { _panel: vignette, coordinates: [0, 0], zIndex: 9 }
+
+exports:
+  - /flipbooks/flames
+  - /timelines/fire
+  - /scenes/campfire
