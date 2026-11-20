@@ -1,0 +1,57 @@
+{
+  "format": "webp",
+  "scale": 1,
+  "safeBuild": false,
+  "files": {
+    "/flipbooks/spin": {
+      "path": "flipbooks/spin.webp",
+      "width": 8,
+      "height": 8,
+      "frames": 4,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
+    "/panels/stage": {
+      "path": "panels/stage.webp",
+      "width": 32,
+      "height": 16
+    },
+    "/scenes/night": {
+      "path": "scenes/night.webp",
+      "width": 64,
+      "height": 32,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
+    },
+    "/sprites/block": {
+      "path": "sprites/block.webp",
+      "width": 4,
+      "height": 8
+    },
+    "/sprites/block-deep": {
+      "path": "sprites/block-deep.webp",
+      "width": 4,
+      "height": 8
+    },
+    "/sprites/block-night": {
+      "path": "sprites/block-night.webp",
+      "width": 4,
+      "height": 8
+    },
+    "/timelines/walk": {
+      "path": "timelines/walk.webp",
+      "width": 32,
+      "height": 16,
+      "frames": 30,
+      "loop": {
+        "num": 4,
+        "den": 1
+      }
+    }
+  }
+}

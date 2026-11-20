@@ -10,7 +10,7 @@ use common::load;
 use pixel_perfect::ResolvedWorksheet;
 use pixel_perfect::animate::{self, Animation, ElementState, round_away, timeline_state};
 use pixel_perfect::compose;
-use pixel_perfect::model::{Axis, Rotation, Transform};
+use pixel_perfect::model::{Axis, Rgba, Rotation, Transform};
 use pixel_perfect::raster::{Image, TRANSPARENT};
 use pixel_perfect::time;
 use serde_json::{Value, json};
@@ -775,4 +775,61 @@ fn durations_sum_to_the_loop() {
     let a = anim(&ws, "scenes", "s");
     let total: u64 = a.frames().iter().map(|(_, t)| t).sum();
     assert_eq!(total, a.loop_len);
+}
+
+// WebP durations
+
+const RED: Rgba = Rgba([255, 0, 0, 255]);
+const BLUE: Rgba = Rgba([0, 0, 255, 255]);
+
+fn pixel(image: &Image) -> Rgba {
+    image.pixels()[0]
+}
+
+fn submillisecond() -> ResolvedWorksheet {
+    pixel_perfect::load_file(&common::fixture("valid/webp-submillisecond.yaml")).unwrap()
+}
+
+#[test]
+fn submillisecond_frame_is_dropped_and_neighbours_merge() {
+    let ws = submillisecond();
+    let a = Animation::new(&ws, "panels", "pixel").unwrap();
+    assert_eq!(a.clock, 9900);
+    // Ticks 99 to 100 show blue, from 10.0 ms to 10.1 ms.
+    assert_eq!(pixel(&a.render_at(99)), BLUE);
+    assert_eq!(pixel(&a.render_at(0)), RED);
+    assert_eq!(pixel(&a.render_at(100)), RED);
+
+    let frames = a.ms_frames();
+    // The first frame is red and runs past the dropped blue segment.
+    assert_eq!(pixel(&frames[0].0), RED);
+    assert!(frames[0].1 > 10, "{}", frames[0].1);
+    assert!(frames.iter().all(|(_, d)| *d > 0));
+    assert!(
+        frames.windows(2).all(|w| w[0].0 != w[1].0),
+        "neighbours differ"
+    );
+    let total: u128 = frames.iter().map(|(_, d)| d).sum();
+    assert_eq!(total, 2000, "loop of 2 s");
+}
+
+#[test]
+fn ms_frames_of_thirds() {
+    let ws = sheet(json!({
+        "flipbooks": [flipbook("fb", 3, &[("a", 1), ("b", 1), ("a", 1)])]
+    }));
+    let a = Animation::new(&ws, "flipbooks", "fb").unwrap();
+    let durations: Vec<u128> = a.ms_frames().iter().map(|(_, d)| *d).collect();
+    assert_eq!(durations, [333, 334, 333]);
+}
+
+#[test]
+fn ms_frame_bound_counts_split_parts() {
+    let ws = submillisecond();
+    let a = Animation::new(&ws, "panels", "pixel").unwrap();
+    let ticks = a.change_ticks(animate::MAX_FRAMES).unwrap();
+    let nonzero = a.ms_frame_bound(&ticks, u128::MAX);
+    assert!(nonzero >= a.ms_frames().len() as u128);
+    // Parts of at most 1 ms: one per millisecond of the loop.
+    assert_eq!(a.ms_frame_bound(&ticks, 1), 2000);
 }

@@ -18,13 +18,14 @@ use crate::error::Diagnostic;
 use crate::model::{ElementSource, Panel, Transform, Transition};
 use crate::raster::{self, Image};
 use crate::semantic::ResolvedWorksheet;
+use crate::webp::{self, WebpError, WebpFrame};
 use crate::{encode, render, time};
 
 /// Collections that can be exported, in worksheet order.
 const COLLECTIONS: [&str; 5] = ["sprites", "flipbooks", "panels", "timelines", "scenes"];
 
 /// Largest image side a PNG can store.
-const MAX_SIDE: u64 = i32::MAX as u64;
+const MAX_PNG_SIDE: u64 = i32::MAX as u64;
 
 /// Default of `--max-image-size`: 1 GiB of RGBA8 pixels.
 pub const DEFAULT_MAX_IMAGE_SIZE: u64 = 1 << 30;
@@ -96,12 +97,30 @@ pub fn human_size(bytes: u128) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     Png,
+    Webp,
 }
 
 impl OutputFormat {
     pub fn extension(self) -> &'static str {
         match self {
             OutputFormat::Png => "png",
+            OutputFormat::Webp => "webp",
+        }
+    }
+
+    /// Name used in messages.
+    fn label(self) -> &'static str {
+        match self {
+            OutputFormat::Png => "PNG",
+            OutputFormat::Webp => "WebP",
+        }
+    }
+
+    /// Largest image side the format can store.
+    fn max_side(self) -> u64 {
+        match self {
+            OutputFormat::Png => MAX_PNG_SIDE,
+            OutputFormat::Webp => u64::from(webp::MAX_SIDE),
         }
     }
 }
@@ -180,6 +199,13 @@ pub enum RenderError {
     /// The export request is invalid; nothing was written.
     #[error("{} error(s) in export plan", .0.len())]
     Plan(Vec<Diagnostic>),
+    /// Encoding an output failed after the plan accepted it.
+    #[error("{pointer}: {source}")]
+    Encode {
+        pointer: String,
+        #[source]
+        source: WebpError,
+    },
     /// Writing failed.
     #[error("{}: cannot write: {source}", path.display())]
     Io {
@@ -414,8 +440,9 @@ fn wide((w, h): (u32, u32)) -> (u64, u64) {
 }
 
 /// Checks the time model of an animated export without rendering it: the loop
-/// fits, the frames fit the size limit and APNG's frame count, and every
-/// segment can be written as an exact APNG delay. Returns the loop length.
+/// fits, the frames fit the size limit and the format's frame count, and, for
+/// APNG, every segment can be written as an exact delay. Returns the loop
+/// length.
 fn plan_animation(
     ws: &ResolvedWorksheet,
     collection: &str,
@@ -439,10 +466,21 @@ fn plan_animation(
                 human_size(u128::from(options.max_image_size.unwrap_or(0))),
             )
         } else {
-            format!("the animation needs more than {MAX_FRAMES} frames, the APNG maximum")
+            format!(
+                "the animation needs more than {MAX_FRAMES} frames, the {} maximum",
+                options.format.label()
+            )
         }
     })?;
-    if let Some((tick, len)) = animation.delay_overflow(&ticks) {
+    if options.format == OutputFormat::Webp {
+        let bound = animation.ms_frame_bound(&ticks, webp::MAX_DURATION_MS);
+        if bound > MAX_FRAMES as u128 {
+            return Err(format!(
+                "the animation may need up to {bound} WebP frames, more than the {MAX_FRAMES} maximum (frames longer than {} ms are split)",
+                webp::MAX_DURATION_MS
+            ));
+        }
+    } else if let Some((tick, len)) = animation.delay_overflow(&ticks) {
         let (num, den) = time::reduced(len, animation.clock);
         let rates: Vec<String> = animation.rates.iter().map(u32::to_string).collect();
         return Err(format!(
@@ -529,10 +567,20 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
             u64::from(w) * u64::from(options.scale),
             u64::from(h) * u64::from(options.scale),
         );
-        if sw > MAX_SIDE || sh > MAX_SIDE {
+        let max_side = options.format.max_side();
+        if sw > max_side || sh > max_side {
+            let hint = match options.format {
+                OutputFormat::Png => String::new(),
+                OutputFormat::Webp => {
+                    format!(" (at most {max_side} pixels per side); PNG has no such limit")
+                }
+            };
             diagnostics.push(Diagnostic::at(
                 id_pointer,
-                format!("scaled image {sw}x{sh} is too large for PNG"),
+                format!(
+                    "scaled image {sw}x{sh} is too large for {}{hint}",
+                    options.format.label()
+                ),
             ));
             continue;
         }
@@ -605,15 +653,31 @@ pub fn image(ws: &ResolvedWorksheet, output: &PlannedOutput, scale: u32) -> Imag
     render::resource(ws, output.collection, &output.id).upscale(scale)
 }
 
-/// Renders an animated output and encodes it as APNG; returns the bytes and
-/// the number of frames written.
+/// Renders an animated output and encodes it in `format`; returns the bytes
+/// and the number of frames written.
 pub fn animation_bytes(
     ws: &ResolvedWorksheet,
     output: &PlannedOutput,
     scale: u32,
-) -> (Vec<u8>, usize) {
+    format: OutputFormat,
+) -> Result<(Vec<u8>, usize), WebpError> {
     let animation = Animation::new(ws, output.collection, &output.id)
         .expect("the export plan checked the time model");
+    if format == OutputFormat::Webp {
+        let frames: Vec<(Image, u128)> = animation
+            .ms_frames()
+            .into_iter()
+            .map(|(image, ms)| (image.upscale(scale), ms))
+            .collect();
+        let webp_frames: Vec<WebpFrame> = frames
+            .iter()
+            .map(|(image, duration_ms)| WebpFrame {
+                image,
+                duration_ms: *duration_ms,
+            })
+            .collect();
+        return webp::animated(&webp_frames);
+    }
     let frames: Vec<(Image, Vec<(u16, u16)>)> = animation
         .frames()
         .into_iter()
@@ -631,7 +695,7 @@ pub fn animation_bytes(
                 .map(move |&delay| encode::ApngFrame { image, delay })
         })
         .collect();
-    (encode::apng(&apng_frames), apng_frames.len())
+    Ok((encode::apng(&apng_frames), apng_frames.len()))
 }
 
 /// Builds the manifest of a plan. `frames` is filled in by [`write`].
@@ -679,7 +743,11 @@ pub fn write(
     let mut manifest = manifest(plan, options);
     for output in &plan.outputs {
         let bytes = if output.loop_seconds.is_some() {
-            let (bytes, frames) = animation_bytes(ws, output, options.scale);
+            let (bytes, frames) = animation_bytes(ws, output, options.scale, options.format)
+                .map_err(|source| RenderError::Encode {
+                    pointer: output.pointer.clone(),
+                    source,
+                })?;
             if let Some(entry) = manifest.files.get_mut(&output.pointer) {
                 entry.frames = Some(frames);
             }
@@ -687,6 +755,7 @@ pub fn write(
         } else {
             match options.format {
                 OutputFormat::Png => encode::png(&image(ws, output, options.scale)),
+                OutputFormat::Webp => webp::still(&image(ws, output, options.scale)),
             }
         };
         write_file(&options.output_path.join(&output.path), &bytes)?;

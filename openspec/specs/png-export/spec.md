@@ -15,12 +15,16 @@ The CLI SHALL provide `pixel-perfect render <worksheet> [--output-path <dir>]
 [--format <format>] [--scale <N>] [--safe-build] [--max-image-size <SIZE>]`,
 with `-o` as a short alias of `--output-path`. It SHALL load and validate the
 worksheet as `validate` does and write nothing if the worksheet is invalid.
-`--output-path` SHALL default to the current directory and `--format` SHALL
-default to `png`, the only value accepted for now.
+`--output-path` SHALL default to the current directory. `--format` SHALL accept
+`png` and `webp` and SHALL default to `png`.
 
 #### Scenario: Render a valid worksheet
 - **WHEN** `pixel-perfect render hero.json --output-path out` runs on a valid worksheet with sprite `hero`
 - **THEN** `out/sprites/hero.png` and `out/manifest.json` are written and the exit code is 0
+
+#### Scenario: Render as WebP
+- **WHEN** `pixel-perfect render hero.json -o out --format webp` runs on the same worksheet
+- **THEN** `out/sprites/hero.webp` and `out/manifest.json` (with `format` `"webp"`) are written and the exit code is 0
 
 #### Scenario: Invalid worksheet
 - **WHEN** `pixel-perfect render broken.json -o out` runs on an invalid worksheet
@@ -111,11 +115,14 @@ byte-identical for identical renders.
 
 ### Requirement: Export selection
 The engine SHALL render the resources listed in `exports`, or, when `exports` is
-absent, every resource of every collection except palettes. Sprites, static
-panels and static scenes SHALL be written as PNG. Flipbooks, timelines and
-animated panels and scenes (see the composition capability) SHALL be written as
-APNG (see the apng-export capability), with the `.png` extension and the same
-output paths, even when the animation has a single frame.
+absent, every resource of every collection except palettes. With `--format png`,
+sprites, static panels and static scenes SHALL be written as PNG, and
+flipbooks, timelines and animated panels and scenes (see the composition
+capability) SHALL be written as APNG (see the apng-export capability), with the
+`.png` extension and the same output paths, even when the animation has a
+single frame. With `--format webp`, the same resources SHALL be written as
+static and animated WebP respectively (see the webp-export capability), with the
+`.webp` extension and the same output paths.
 
 #### Scenario: Explicit exports
 - **WHEN** `exports` is `["/sprites/hero"]` and the worksheet also defines sprite `coin`
@@ -132,6 +139,10 @@ output paths, even when the animation has a single frame.
 #### Scenario: Animated resources
 - **WHEN** `exports` contains `/flipbooks/spin`, `/timelines/walk` and `/scenes/night`, and `night` has a `_timeline` layer
 - **THEN** `flipbooks/spin.png`, `timelines/walk.png` and `scenes/night.png` are written as APNG with the flipbook, panel and scene sizes
+
+#### Scenario: Animated resources as WebP
+- **WHEN** the same exports are rendered with `--format webp`
+- **THEN** `flipbooks/spin.webp`, `timelines/walk.webp` and `scenes/night.webp` are written as animated WebP, and a static panel would be written as a static WebP
 
 ### Requirement: Integer upscale
 With `--scale N` (an integer from 1 to 64), the engine SHALL enlarge each final

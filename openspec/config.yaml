@@ -9,8 +9,8 @@ context: |
   against a single JSON Schema (draft 2020-12): schema/worksheet.schema.json.
   The schema is the source of truth for the worksheet format. Constraints the
   schema cannot express are marked with `$comment: "Engine: ..."` and MUST be
-  enforced by the engine as semantic validation. XML input (with a dedicated
-  schema) is a possible future addition, not in scope now.
+  enforced by the engine as semantic validation. XML input is shelved: do not
+  plan for it.
 
   Worksheet concepts: palettes (single-char -> RGBA, with inheritance),
   sprites (character grids, with inheritance and overrideLines), flipbooks

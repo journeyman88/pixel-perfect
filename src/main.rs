@@ -60,6 +60,7 @@ fn parse_max_image_size(text: &str) -> Result<MaxImageSize, String> {
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Png,
+    Webp,
 }
 
 /// Success.
@@ -91,6 +92,7 @@ fn main() -> ExitCode {
                 output_path,
                 format: match format {
                     Format::Png => OutputFormat::Png,
+                    Format::Webp => OutputFormat::Webp,
                 },
                 scale,
                 safe_build,

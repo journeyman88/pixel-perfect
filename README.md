@@ -41,7 +41,7 @@ pixel-perfect render hero.json --output-path out --scale 4
 | Option | Default | Meaning |
 |---|---|---|
 | `-o`, `--output-path <dir>` | current directory | Root of the output tree. |
-| `--format <format>` | `png` | Output format (only `png` for now). |
+| `--format <format>` | `png` | Output format: `png` or `webp` (see [WebP](#webp)). |
 | `--scale <N>` | `1` | Integer upscale, 1–64: every pixel becomes an N×N block. |
 | `--safe-build` | off | Name files by a hash of their id (see below). |
 | `--max-image-size <SIZE>` | `1GiB` | Largest image the engine may build (see below). |
@@ -77,9 +77,10 @@ length in seconds as an exact fraction:
 Each image is stored as an **indexed PNG** (1, 2, 4 or 8 bits per pixel) when
 it has at most 256 distinct colors, and as **RGBA** otherwise. The count is
 made on the final pixels, so the choice is always the smallest lossless one.
-Output is deterministic: the same worksheet and options give byte-identical
-files. Nothing is written if the worksheet or the export request is invalid,
-and files from earlier renders are never deleted.
+Output is deterministic: the same compiled engine with the same worksheet
+and options gives byte-identical files. Nothing is written if the worksheet
+or the export request is invalid, and files from earlier renders are never
+deleted.
 
 Flipbooks, timelines, and panels or scenes that play a flipbook or a timeline
 are written as **APNG** (still with the `.png` extension, at the same paths).
@@ -104,6 +105,27 @@ the limit applies to all its frames together, since they are kept in memory
 until the shared palette is known. SIZE is a number of bytes with an optional `KiB`, `MiB`, `GiB` or
 `TiB` suffix, or `none` for no limit. It is a guard against mistakes, not a
 memory budget: the peak memory use is a few times the largest image.
+
+### WebP
+
+With `--format webp` the same resources are written as lossless **WebP**
+(`.webp`, same paths): static resources as simple WebP, animated ones as
+animated WebP that loops forever, each frame covering the whole canvas. It is
+pure Rust (the `image-webp` encoder, with the container written by the engine),
+deterministic like PNG, and accepted by libwebp.
+
+WebP stores frame durations in whole milliseconds, so each frame's end time is
+rounded to the nearest millisecond (halves up) and durations are the
+differences: errors never add up, and a loop that lasts a whole number of
+milliseconds keeps its exact length (`loop` in the manifest stays exact).
+Frames shorter than half a millisecond are dropped. Combinations of `fps` that
+APNG cannot store exactly are fine in WebP. Each side of a WebP image is at
+most 16384 pixels, checked before anything is written.
+
+**PNG is the better choice for now.** The current encoder does not use
+WebP's palette transform, so on the examples every WebP file is larger than
+its PNG: 1.05× to 4.2×, about 3.5× for stills and 1.5× for animations. WebP is
+there for pipelines that require it.
 
 ### Animation
 
@@ -146,7 +168,6 @@ loop, and `seekFlipbook` jumps them to the start of `frames[frameIndex]`.
 | JSON | supported |
 | YAML | supported |
 | TOML | supported |
-| XML (dedicated schema) | future |
 
 JSON, YAML and TOML all map onto the same data model and are validated against
 the same JSON Schema.
@@ -155,7 +176,8 @@ the same JSON Schema.
 |---|---|
 | PNG | supported |
 | APNG (animated PNG) | supported |
-| WebP / animated WebP (lossless) | later |
+| WebP (lossless) | supported, larger than PNG for now |
+| Animated WebP (lossless) | supported, larger than APNG for now |
 
 The output format and the integer upscale factor are chosen on the command line,
 not in the worksheet.

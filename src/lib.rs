@@ -26,6 +26,7 @@ pub mod resolve;
 pub mod schema;
 pub mod semantic;
 pub mod time;
+pub mod webp;
 
 use std::path::Path;
 

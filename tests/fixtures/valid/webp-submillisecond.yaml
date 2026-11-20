@@ -1,0 +1,38 @@
+# Two 1x1 flipbooks at 100 and 99 fps on a 9900 ticks-per-second clock.
+# `blink` alternates red and blue every frame-unit; `cover` alternates clear
+# and red on top of it. The pixel is blue only while `blink` is blue and
+# `cover` is clear. The first time, from 1/100 s (tick 99) to 1/99 s
+# (tick 100), both ends round to 10 ms: in WebP that blue frame is dropped and
+# the red frames around it merge.
+palettes:
+  - id: p
+    colors:
+      - { char: r, rgba: [255, 0, 0] }
+      - { char: b, rgba: [0, 0, 255] }
+sprites:
+  - { id: red, _palette: p, lines: [r] }
+  - { id: blue, _palette: p, lines: [b] }
+  - { id: clear, _palette: p, lines: ["."] }
+flipbooks:
+  - id: blink
+    fps: 100
+    width: 1
+    height: 1
+    frames:
+      - { _sprite: red, coordinates: [0, 0], duration: 1 }
+      - { _sprite: blue, coordinates: [0, 0], duration: 1 }
+  - id: cover
+    fps: 99
+    width: 1
+    height: 1
+    frames:
+      - { _sprite: clear, coordinates: [0, 0], duration: 1 }
+      - { _sprite: red, coordinates: [0, 0], duration: 1 }
+panels:
+  - id: pixel
+    width: 1
+    height: 1
+    elements:
+      - { _flipbook: blink, coordinates: [0, 0] }
+      - { _flipbook: cover, coordinates: [0, 0], zIndex: 1 }
+exports: [/panels/pixel]

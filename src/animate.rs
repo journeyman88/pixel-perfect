@@ -627,21 +627,73 @@ impl<'a> Animation<'a> {
     /// The frames of one loop with their durations in ticks, merging
     /// consecutive identical frames when the merged delay still fits APNG.
     pub fn frames(&self) -> Vec<(Image, u64)> {
-        let ticks = self
-            .change_ticks(MAX_FRAMES)
-            .expect("the export plan bounds the frame count");
+        let ticks = self.all_change_ticks();
+        let lengths = segments(&ticks, self.loop_len).map(|(_, len)| len);
+        self.merged(&ticks, lengths, |a, b| {
+            time::delay_fits(a + b, self.clock).then_some(a + b)
+        })
+    }
+
+    /// The frames of one loop with their WebP durations in milliseconds (see
+    /// [`time::ms_durations`]): segments of 0 ms are skipped without being
+    /// rendered, then consecutive identical frames are merged. Durations may
+    /// exceed what one WebP frame can hold; the encoder splits them.
+    pub fn ms_frames(&self) -> Vec<(Image, u128)> {
+        let ticks = self.all_change_ticks();
+        let durations = self.ms_durations(&ticks);
+        self.merged(&ticks, durations.into_iter(), |a, b| Some(a + b))
+    }
+
+    /// Upper bound of the WebP frames written for `ticks` (from
+    /// [`Self::change_ticks`]), counting every non-zero segment split into
+    /// parts of at most `max_ms`. Merging only lowers the count.
+    pub fn ms_frame_bound(&self, ticks: &[u64], max_ms: u128) -> u128 {
+        self.ms_durations(ticks)
+            .into_iter()
+            .map(|d| d.div_ceil(max_ms))
+            .sum()
+    }
+
+    fn all_change_ticks(&self) -> Vec<u64> {
+        self.change_ticks(MAX_FRAMES)
+            .expect("the export plan bounds the frame count")
+    }
+
+    fn ms_durations(&self, ticks: &[u64]) -> Vec<u128> {
+        let ends: Vec<u64> = segments(ticks, self.loop_len)
+            .map(|(start, len)| start + len)
+            .collect();
+        time::ms_durations(&ends, self.clock)
+    }
+
+    /// Renders the segment starting at each of `ticks`, with the matching
+    /// duration from `durations`. Segments whose duration is zero are skipped
+    /// without rendering. A frame identical to the previous one is merged
+    /// into it when `merge` returns the merged duration.
+    fn merged<D>(
+        &self,
+        ticks: &[u64],
+        durations: impl Iterator<Item = D>,
+        merge: impl Fn(D, D) -> Option<D>,
+    ) -> Vec<(Image, D)>
+    where
+        D: Copy + Default + PartialEq,
+    {
         let mut cache = Cache::default();
-        let mut frames: Vec<(Image, u64)> = Vec::new();
-        for (tick, len) in segments(&ticks, self.loop_len) {
+        let mut frames: Vec<(Image, D)> = Vec::new();
+        for (&tick, duration) in ticks.iter().zip(durations) {
+            if duration == D::default() {
+                continue;
+            }
             let image = self.kind.render(self.ws, self.clock, tick, &mut cache);
             if let Some(last) = frames.last_mut()
                 && last.0 == image
-                && time::delay_fits(last.1 + len, self.clock)
+                && let Some(sum) = merge(last.1, duration)
             {
-                last.1 += len;
+                last.1 = sum;
                 continue;
             }
-            frames.push((image, len));
+            frames.push((image, duration));
         }
         frames
     }

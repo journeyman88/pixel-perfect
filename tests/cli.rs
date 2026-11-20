@@ -289,3 +289,59 @@ fn render_over_the_size_limit_is_an_invalid_plan() {
     );
     assert!(!out.exists());
 }
+
+#[test]
+fn render_webp() {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = worksheet_file(dir.path(), SHEET);
+    let out = dir.path().join("out");
+    cli()
+        .arg("render")
+        .arg(&sheet)
+        .arg("-o")
+        .arg(&out)
+        .args(["--format", "webp"])
+        .assert()
+        .code(0);
+    let webp = std::fs::read(out.join("sprites/hero.webp")).unwrap();
+    assert_eq!(&webp[0..4], b"RIFF");
+    assert_eq!(&webp[8..16], b"WEBPVP8L");
+    let manifest = std::fs::read_to_string(out.join("manifest.json")).unwrap();
+    assert!(manifest.contains(r#""format": "webp""#), "{manifest}");
+}
+
+#[test]
+fn render_webp_side_limit_is_an_invalid_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = vec![format!("\"{}\"", "r".repeat(300)); 300].join(", ");
+    let sheet = worksheet_file(
+        dir.path(),
+        &format!(
+            r#"{{
+    "palettes": [{{ "id": "p", "colors": [{{ "char": "r", "rgba": [255, 0, 0] }}] }}],
+    "sprites": [{{ "id": "big", "_palette": "p", "lines": [{lines}] }}]
+}}"#
+        ),
+    );
+    let out = dir.path().join("out");
+    let output = cli()
+        .arg("render")
+        .arg(&sheet)
+        .arg("-o")
+        .arg(&out)
+        .args([
+            "--format",
+            "webp",
+            "--scale",
+            "64",
+            "--max-image-size",
+            "none",
+        ])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("too large for WebP"), "{stderr}");
+    assert!(!out.exists());
+}

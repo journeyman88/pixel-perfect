@@ -126,9 +126,64 @@ pub fn delays(ticks: u64, clock: u64) -> Option<Vec<(u16, u16)>> {
     Some(out)
 }
 
+/// `ticks / clock` seconds in milliseconds, rounded to the nearest, halves up.
+/// `u128`, because a `u64` tick count in milliseconds can exceed `u64`.
+fn round_ms(ticks: u64, clock: u64) -> u128 {
+    let (t, c) = (u128::from(ticks), u128::from(clock));
+    (2 * 1000 * t + c) / (2 * c)
+}
+
+/// WebP frame durations in milliseconds for frames ending at the sorted ticks
+/// `ends` of a clock of `clock` ticks per second; the first frame starts at 0.
+/// Each end is rounded to the nearest millisecond and durations are the
+/// differences, so rounding errors never accumulate. Durations may be 0.
+pub fn ms_durations(ends: &[u64], clock: u64) -> Vec<u128> {
+    let mut previous = 0;
+    ends.iter()
+        .map(|&end| {
+            let ms = round_ms(end, clock);
+            let duration = ms - previous;
+            previous = ms;
+            duration
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thirds_of_a_second() {
+        assert_eq!(ms_durations(&[1, 2, 3], 3), [333, 334, 333]);
+    }
+
+    #[test]
+    fn whole_millisecond_loop_sums_exactly() {
+        // 45 frame-units at 30 fps: 1.5 s.
+        let ends: Vec<u64> = (1..=45).collect();
+        let durations = ms_durations(&ends, 30);
+        assert_eq!(durations.iter().sum::<u128>(), 1500);
+        assert!(durations.iter().all(|&d| d == 33 || d == 34));
+    }
+
+    #[test]
+    fn half_millisecond_rounds_up() {
+        // 1/2000 s = 0.5 ms, 3/2000 s = 1.5 ms.
+        assert_eq!(ms_durations(&[1, 3], 2000), [1, 1]);
+    }
+
+    #[test]
+    fn sub_millisecond_segment_is_zero() {
+        // fps 100 and 99 on a 9900 ticks-per-second clock: 1/100 s = 99 ticks,
+        // 1/99 s = 100 ticks. Both round to 10 ms.
+        assert_eq!(ms_durations(&[99, 100], 9900), [10, 0]);
+    }
+
+    #[test]
+    fn huge_tick_counts_do_not_overflow() {
+        assert_eq!(ms_durations(&[u64::MAX], 1), [u128::from(u64::MAX) * 1000]);
+    }
 
     #[test]
     fn lcm_overflow_is_none() {

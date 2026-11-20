@@ -341,8 +341,9 @@ fn repeated_render_is_byte_identical() {
     }
 }
 
-#[test]
-fn delay_denominator_too_large_is_a_plan_error() {
+/// The apng-export scenario "Denominator too large": some change ticks are 1
+/// tick apart on a 716539 ticks-per-second clock.
+fn denominator_scene() -> ResolvedWorksheet {
     let doc = json!({
         "palettes": [{ "id": "p", "colors": [{ "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] }] }],
         "sprites": [{ "id": "a", "_palette": "p", "lines": ["a"] }, { "id": "b", "_palette": "p", "lines": ["b"] }],
@@ -363,7 +364,12 @@ fn delay_denominator_too_large_is_a_plan_error() {
         ] }],
         "exports": ["/scenes/s"]
     });
-    let ws = common::load(doc);
+    common::load(doc)
+}
+
+#[test]
+fn delay_denominator_too_large_is_a_plan_error() {
+    let ws = denominator_scene();
     let dir = tempfile::tempdir().unwrap();
     let errors = plan_errors(&ws, &options(dir.path()));
     assert_error(&errors, "/scenes/0", "combining the rates 83, 89, 97 fps");
@@ -714,5 +720,148 @@ fn descriptions_do_not_change_the_output() {
             written == contents(without.path()),
             "output differs (safe_build: {safe_build})"
         );
+    }
+}
+
+// WebP
+
+fn webp_options(dir: &Path) -> RenderOptions {
+    RenderOptions {
+        format: OutputFormat::Webp,
+        ..options(dir)
+    }
+}
+
+#[test]
+fn webp_paths_and_manifest() {
+    let ws = compositions(None);
+    let dir = tempfile::tempdir().unwrap();
+    let (_, manifest) = export::render(&ws, &webp_options(dir.path())).unwrap();
+    assert_eq!(manifest.format, "webp");
+    let written = files(dir.path());
+    assert!(written.contains(&"manifest.json".to_owned()));
+    for file in written.iter().filter(|f| *f != "manifest.json") {
+        assert!(file.ends_with(".webp"), "{file}");
+        let bytes = std::fs::read(dir.path().join(file)).unwrap();
+        let chunks = images::webp_chunks(&bytes);
+        let entry = manifest
+            .files
+            .values()
+            .find(|e| &e.path == file)
+            .expect("listed in the manifest");
+        match entry.frames {
+            Some(frames) => {
+                assert_eq!(chunks[0].fourcc, "VP8X", "{file}");
+                assert_eq!(
+                    chunks.len(),
+                    2 + frames,
+                    "{file}: VP8X, ANIM and the frames"
+                );
+            }
+            None => assert_eq!(chunks.len(), 1, "{file}: a single VP8L chunk"),
+        }
+    }
+}
+
+#[test]
+fn rendered_animated_webp_round_trip_with_scale() {
+    let ws = compositions(Some(json!(["/scenes/night"])));
+    let dir = tempfile::tempdir().unwrap();
+    let mut opts = webp_options(dir.path());
+    opts.scale = 3;
+    export::render(&ws, &opts).unwrap();
+    let bytes = std::fs::read(dir.path().join("scenes/night.webp")).unwrap();
+    let decoded = images::decode_webp_frames(&bytes);
+    let animation = pixel_perfect::animate::Animation::new(&ws, "scenes", "night").unwrap();
+    let expected = animation.ms_frames();
+    assert_eq!(decoded.len(), expected.len());
+    for ((pixels, ms), (image, expected_ms)) in decoded.iter().zip(&expected) {
+        assert_eq!(pixels.as_slice(), image.upscale(3).pixels());
+        assert_eq!(u128::from(*ms), *expected_ms);
+    }
+}
+
+#[test]
+fn webp_side_limit() {
+    let lines: Vec<String> = vec!["r".repeat(300); 300];
+    let ws = worksheet(
+        json!([{ "id": "big", "_palette": "p", "lines": lines }]),
+        None,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let opts = RenderOptions {
+        scale: 64,
+        max_image_size: None,
+        ..webp_options(dir.path())
+    };
+    let errors = plan_errors(&ws, &opts);
+    assert_error(
+        &errors,
+        "/sprites/0/id",
+        "19200x19200 is too large for WebP",
+    );
+    assert_error(&errors, "/sprites/0/id", "PNG has no such limit");
+    assert!(files(dir.path()).is_empty());
+
+    // The same render as PNG passes the plan.
+    let png = RenderOptions {
+        format: OutputFormat::Png,
+        ..opts
+    };
+    export::plan(&ws, &png).unwrap();
+}
+
+#[test]
+fn webp_accepts_rates_that_apng_rejects() {
+    let ws = denominator_scene();
+    let dir = tempfile::tempdir().unwrap();
+    let (_, manifest) = export::render(&ws, &webp_options(dir.path())).unwrap();
+    assert!(manifest.files["/scenes/s"].frames.unwrap() > 0);
+}
+
+#[test]
+fn webp_frame_count_after_splitting_is_bounded() {
+    let doc = json!({
+        "palettes": [{ "id": "p", "colors": [{ "char": "a", "rgba": [1, 0, 0] }] }],
+        "sprites": [{ "id": "a", "_palette": "p", "lines": ["a"] }],
+        "panels": [{ "id": "still", "width": 1, "height": 1, "elements": [
+            { "id": "e", "_sprite": "a", "coordinates": [0, 0] }] }],
+        "timelines": [{ "id": "long", "_panel": "still", "fps": 1, "duration": 100_000_000_000_000u64,
+            "transitions": [{ "kind": "setVisible", "_element": "e", "value": true, "at": 0 }] }],
+        "exports": ["/timelines/long"]
+    });
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    let errors = plan_errors(&ws, &webp_options(dir.path()));
+    assert_error(&errors, "/timelines/0", "WebP frames");
+    assert!(files(dir.path()).is_empty());
+}
+
+#[test]
+fn repeated_webp_render_is_byte_identical_without_metadata() {
+    let ws = compositions(None);
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    export::render(&ws, &webp_options(a.path())).unwrap();
+    export::render(&ws, &webp_options(b.path())).unwrap();
+    let written = files(a.path());
+    assert!(
+        written.iter().any(|f| f.starts_with("timelines/")),
+        "{written:?}"
+    );
+    for file in written {
+        let bytes = std::fs::read(a.path().join(&file)).unwrap();
+        assert!(
+            bytes == std::fs::read(b.path().join(&file)).unwrap(),
+            "{file}"
+        );
+        if file.ends_with(".webp") {
+            for chunk in images::webp_chunks(&bytes) {
+                assert!(
+                    ["VP8L", "VP8X", "ANIM", "ANMF"].contains(&chunk.fourcc.as_str()),
+                    "{file}: unexpected chunk {}",
+                    chunk.fourcc
+                );
+            }
+        }
     }
 }
