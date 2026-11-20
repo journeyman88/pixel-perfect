@@ -84,9 +84,14 @@ deleted.
 
 Flipbooks, timelines, and panels or scenes that play a flipbook or a timeline
 are written as **APNG** (still with the `.png` extension, at the same paths).
-They loop forever, every frame covers the whole canvas, all frames share one
-palette chosen by the same color count, and the first frame is the default
-image, so viewers without APNG support show it. See [Animation](#animation).
+They loop forever, all frames share one palette chosen by the same color
+count, and the first frame is the default image, so viewers without APNG
+support show it. After the first frame, each frame stores only the rectangle
+that changed since the previous one, either overwriting it or, when that is
+smaller and every changed pixel is opaque, blending it over the previous frame
+with the unchanged pixels left transparent. Decoders see exactly the rendered
+frames; on the examples this makes animations about 7× smaller than full
+frames. See [Animation](#animation).
 
 Panels and scenes are composed with **source-over** on non-premultiplied alpha,
 computed in integer arithmetic with a fixed rounding rule, so semi-transparent
@@ -110,7 +115,8 @@ memory budget: the peak memory use is a few times the largest image.
 
 With `--format webp` the same resources are written as lossless **WebP**
 (`.webp`, same paths): static resources as simple WebP, animated ones as
-animated WebP that loops forever, each frame covering the whole canvas. It is
+animated WebP that loops forever, each frame after the first overwriting only
+the rectangle that changed (extended to even coordinates, as WebP requires). It is
 pure Rust (the `image-webp` encoder, with the container written by the engine),
 deterministic like PNG, and accepted by libwebp.
 
@@ -124,8 +130,9 @@ most 16384 pixels, checked before anything is written.
 
 **PNG is the better choice for now.** The current encoder does not use
 WebP's palette transform, so on the examples every WebP file is larger than
-its PNG: 1.05× to 4.2×, about 3.5× for stills and 1.5× for animations. WebP is
-there for pipelines that require it.
+its PNG: about 3.5× for stills and 2.5× for animations. WebP frames are never
+blended over the previous one, because `image-webp` does not composite opaque
+pixels exactly. WebP is there for pipelines that require it.
 
 ### Animation
 

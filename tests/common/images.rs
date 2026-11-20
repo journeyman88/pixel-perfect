@@ -70,24 +70,30 @@ pub fn header(png: &[u8]) -> (u32, u32, u8, u8) {
 /// One decoded APNG frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedFrame {
+    /// The whole canvas after compositing this frame.
     pub pixels: Vec<Rgba>,
     pub delay: (u16, u16),
     /// (x offset, y offset, width, height, dispose op, blend op)
     pub control: (u32, u32, u32, u32, u8, u8),
 }
 
-/// Decodes every frame of an APNG to RGBA8, with `num_plays`.
+/// Decodes every frame of an APNG to RGBA8 canvases, compositing each frame
+/// as the APNG specification defines, with `num_plays`. Supports what the
+/// engine writes: `dispose_op` NONE, `blend_op` SOURCE, and `blend_op` OVER
+/// for source pixels with alpha 0 or 255 (panics on anything else).
 pub fn decode_apng(data: &[u8]) -> (Vec<DecodedFrame>, u32) {
     let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().unwrap();
+    let (width, height) = (reader.info().width, reader.info().height);
     let actl = reader.info().animation_control.expect("acTL");
+    let mut canvas = vec![Rgba([0, 0, 0, 0]); (width * height) as usize];
     let mut frames = Vec::new();
     for _ in 0..actl.num_frames {
         let mut buf = vec![0; reader.output_buffer_size().unwrap()];
         let info = reader.next_frame(&mut buf).unwrap();
         let fc = *reader.info().frame_control().expect("fcTL");
-        let pixels = match info.color_type {
+        let pixels: Vec<Rgba> = match info.color_type {
             png::ColorType::Rgba => buf[..info.buffer_size()]
                 .chunks(4)
                 .map(|c| Rgba([c[0], c[1], c[2], c[3]]))
@@ -98,8 +104,33 @@ pub fn decode_apng(data: &[u8]) -> (Vec<DecodedFrame>, u32) {
                 .collect(),
             other => panic!("unexpected decoded color type {other:?}"),
         };
+        assert_eq!(
+            pixels.len(),
+            (fc.width * fc.height) as usize,
+            "sub-frame size"
+        );
+        assert!(fc.x_offset + fc.width <= width && fc.y_offset + fc.height <= height);
+        assert_eq!(
+            fc.dispose_op,
+            png::DisposeOp::None,
+            "only dispose NONE is written"
+        );
+        for y in 0..fc.height {
+            for x in 0..fc.width {
+                let src = pixels[(y * fc.width + x) as usize];
+                let dst = &mut canvas[((fc.y_offset + y) * width + fc.x_offset + x) as usize];
+                match fc.blend_op {
+                    png::BlendOp::Source => *dst = src,
+                    png::BlendOp::Over => match src.0[3] {
+                        0 => {}
+                        255 => *dst = src,
+                        a => panic!("OVER with source alpha {a} is never written"),
+                    },
+                }
+            }
+        }
         frames.push(DecodedFrame {
-            pixels,
+            pixels: canvas.clone(),
             delay: (fc.delay_num, fc.delay_den),
             control: (
                 fc.x_offset,

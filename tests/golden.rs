@@ -8,6 +8,8 @@
 //! `UPDATE_GOLDEN=1 cargo test --test golden`
 
 mod common;
+#[path = "common/images.rs"]
+mod images;
 
 use std::path::{Path, PathBuf};
 
@@ -186,4 +188,47 @@ fn webp_goldens_pass_webpinfo() {
         }
     }
     assert_eq!(checked, 27);
+}
+
+/// Every golden APNG, decoded by compositing its frames as the APNG
+/// specification defines, gives exactly the rendered frames of its resource.
+#[test]
+fn golden_apngs_decode_to_the_rendered_frames() {
+    use pixel_perfect::animate::Animation;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let mut checked = 0;
+    for (name, fixture) in [
+        ("full", "valid/full.json"),
+        ("full-x4-safe", "valid/full.json"),
+        ("animation", "valid/animation.json"),
+    ] {
+        let ws = pixel_perfect::load_file(&common::fixture(fixture)).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join(name).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let scale = manifest["scale"].as_u64().unwrap() as u32;
+        for (pointer, entry) in manifest["files"].as_object().unwrap() {
+            if entry.get("frames").is_none() {
+                continue;
+            }
+            let (collection, id) = pointer[1..].split_once('/').unwrap();
+            let bytes =
+                std::fs::read(root.join(name).join(entry["path"].as_str().unwrap())).unwrap();
+            let (decoded, _) = images::decode_apng(&bytes);
+            let animation = Animation::new(&ws, collection, id).unwrap();
+            let expected = animation.frames();
+            assert_eq!(decoded.len(), expected.len(), "{name}{pointer}");
+            for (i, (frame, (image, _))) in decoded.iter().zip(&expected).enumerate() {
+                assert!(
+                    frame.pixels == image.upscale(scale).pixels(),
+                    "{name}{pointer}: frame {i}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    // full: flipbook, timeline, scene (twice, at two scales); animation:
+    // flipbook, 2 timelines, scene (its panels are static).
+    assert_eq!(checked, 10);
 }

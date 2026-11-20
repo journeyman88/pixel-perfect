@@ -15,6 +15,7 @@
 
 pub mod animate;
 pub mod compose;
+pub mod delta;
 pub mod encode;
 pub mod error;
 pub mod export;

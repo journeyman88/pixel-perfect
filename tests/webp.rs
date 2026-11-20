@@ -222,3 +222,168 @@ fn vp8l_alpha_agrees_with_the_vp8x_flag() {
     assert!(!still(&opaque));
     assert!(still(&half));
 }
+
+// Blend verification (see openspec change `optimize-animation-rendering`,
+// `blend-verification.md`).
+
+/// The `VP8L` bitstream `image-webp` writes for RGBA pixels.
+fn raw_vp8l(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
+    let data: Vec<u8> = pixels.iter().flatten().copied().collect();
+    let mut file = Vec::new();
+    image_webp::WebPEncoder::new(&mut file)
+        .encode(&data, width, height, image_webp::ColorType::Rgba8)
+        .unwrap();
+    webp_chunks(&file).remove(0).data
+}
+
+fn raw_anmf(bitstream: &[u8], width: u32, height: u32, blend: bool) -> Vec<u8> {
+    let u24 = |v: u32| v.to_le_bytes()[..3].to_vec();
+    let mut payload = [u24(0), u24(0), u24(width - 1), u24(height - 1), u24(100)].concat();
+    payload.push(if blend { 0 } else { 0b10 });
+    payload.extend(raw_chunk(b"VP8L", bitstream));
+    raw_chunk(b"ANMF", &payload)
+}
+
+/// Opaque source pixels over every channel value and several destination
+/// alphas must replace the canvas; transparent ones must keep it. Fails with
+/// `image-webp` 0.2.4, which blends opaque pixels too and turns a channel `c`
+/// into `c - 1`: the reason masked frames are not used for WebP. Run with
+/// `cargo test --test webp -- --ignored` to re-check after an update.
+#[test]
+#[ignore = "image-webp 0.2.4 does not composite opaque-over exactly"]
+fn masked_blend_is_exact_in_image_webp() {
+    let (w, h) = (256u32, 10u32);
+    let alphas = [0u8, 1, 128, 254, 255];
+    let dst = |x: u32, y: u32| -> [u8; 4] {
+        let a = alphas[(y % 5) as usize];
+        if a == 0 {
+            [0; 4]
+        } else {
+            [255 - x as u8, x as u8, (x * 7 % 256) as u8, a]
+        }
+    };
+    let src = |x: u32, y: u32| -> [u8; 4] {
+        if y < 5 {
+            [x as u8, 255 - x as u8, (x * 13 % 256) as u8, 255]
+        } else {
+            [0; 4]
+        }
+    };
+    let grid = |f: &dyn Fn(u32, u32) -> [u8; 4]| -> Vec<[u8; 4]> {
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .map(|(x, y)| f(x, y))
+            .collect()
+    };
+    let u24 = |v: u32| v.to_le_bytes()[..3].to_vec();
+    let file = raw_file(&[
+        raw_chunk(
+            b"VP8X",
+            &[[0b0001_0010, 0, 0, 0].to_vec(), u24(w - 1), u24(h - 1)].concat(),
+        ),
+        raw_chunk(b"ANIM", &[0; 6]),
+        raw_anmf(&raw_vp8l(&grid(&dst), w, h), w, h, false),
+        raw_anmf(&raw_vp8l(&grid(&src), w, h), w, h, true),
+    ]);
+    let frames = decode_webp_frames(&file);
+    let expected: Vec<Rgba> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .map(|(x, y)| Rgba(if y < 5 { src(x, y) } else { dst(x, y) }))
+        .collect();
+    let wrong: Vec<_> = frames[1]
+        .0
+        .iter()
+        .zip(&expected)
+        .enumerate()
+        .filter(|(_, (g, e))| g != e)
+        .map(|(i, (g, e))| (i as u32 % w, i as u32 / w, *g, *e))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "{} wrong pixels, e.g. {:?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(3)]
+    );
+}
+
+// Changed-area frames
+
+/// (x, y, width, height, flags) of every `ANMF`.
+fn anmf_rects(file: &[u8]) -> Vec<(u32, u32, u32, u32, u8)> {
+    webp_chunks(file)
+        .iter()
+        .filter(|c| c.fourcc == "ANMF")
+        .map(|c| {
+            let f = anmf(c);
+            (f.x, f.y, f.width, f.height, f.flags)
+        })
+        .collect()
+}
+
+fn assert_webp_round_trip(images: &[&Image], file: &[u8]) {
+    let decoded = decode_webp_frames(file);
+    assert_eq!(decoded.len(), images.len());
+    for (i, ((pixels, _), image)) in decoded.iter().zip(images).enumerate() {
+        assert_eq!(pixels.as_slice(), image.pixels(), "frame {i}");
+    }
+}
+
+#[test]
+fn odd_offset_is_extended_to_even() {
+    let a = Image::new(8, 6, vec![OPAQUE; 48]);
+    let mut pixels = vec![OPAQUE; 48];
+    pixels[3 * 8 + 5] = HALF;
+    let b = Image::new(8, 6, pixels);
+    let (file, _) = webp::animated(&[frame(&a, 100), frame(&b, 100)]).unwrap();
+    let rects = anmf_rects(&file);
+    assert_eq!(rects[0], (0, 0, 8, 6, 0b10), "first frame: full canvas");
+    assert_eq!(
+        rects[1],
+        (4, 2, 2, 2, 0b10),
+        "pixel (5, 3) in a 2x2 area at (4, 2)"
+    );
+    assert_webp_round_trip(&[&a, &b], &file);
+}
+
+#[test]
+fn transparent_over_opaque_overwrites_the_area() {
+    let a = Image::new(4, 1, vec![OPAQUE; 4]);
+    let b = Image::new(4, 1, vec![OPAQUE, OPAQUE, CLEAR, OPAQUE]);
+    let (file, _) = webp::animated(&[frame(&a, 100), frame(&b, 100)]).unwrap();
+    assert_eq!(anmf_rects(&file)[1], (2, 0, 1, 1, 0b10));
+    assert_eq!(decode_webp_frames(&file)[1].0[2], CLEAR);
+}
+
+#[test]
+fn split_duration_repeats_as_1x1() {
+    let a = img(&["ab", "cd"]);
+    let b = img(&["ab", "ce"]);
+    let (file, count) = webp::animated(&[frame(&a, 1000), frame(&b, 20_000_000)]).unwrap();
+    assert_eq!(count, 3);
+    let rects = anmf_rects(&file);
+    assert_eq!(rects[1], (0, 0, 2, 2, 0b10), "(1, 1) extended to (0, 0)");
+    assert_eq!(rects[2], (0, 0, 1, 1, 0b10), "nothing changes");
+    assert_webp_round_trip(&[&a, &b, &b], &file);
+}
+
+#[test]
+fn moving_square_round_trip() {
+    let at = |dx: u32| {
+        Image::from_fn(32, 16, |x, y| {
+            if (3 + dx..11 + dx).contains(&x) && (5..13).contains(&y) {
+                OPAQUE
+            } else {
+                HALF
+            }
+        })
+    };
+    let images: Vec<Image> = (0..6).map(at).collect();
+    let frames: Vec<WebpFrame> = images.iter().map(|i| frame(i, 50)).collect();
+    let (file, _) = webp::animated(&frames).unwrap();
+    for r in &anmf_rects(&file)[1..] {
+        // Rows 5..13, top edge extended to the even row 4.
+        assert!(r.2 <= 10 && r.3 == 9, "small area, not 32x16: {r:?}");
+        assert_eq!((r.0 % 2, r.1 % 2), (0, 0), "even offsets");
+    }
+    assert_webp_round_trip(&images.iter().collect::<Vec<_>>(), &file);
+}

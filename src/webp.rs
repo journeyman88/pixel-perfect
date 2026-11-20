@@ -9,6 +9,7 @@
 
 use image_webp::{ColorType, EncoderParams, WebPEncoder};
 
+use crate::delta::{self, Rect};
 use crate::raster::Image;
 
 /// Largest width or height a `VP8L` bitstream can store (14 bits).
@@ -136,8 +137,10 @@ pub fn split_duration(duration_ms: u128) -> impl Iterator<Item = u32> {
 /// Encodes an animation as an animated lossless WebP: `VP8X` (animation flag,
 /// alpha flag if some pixel of some frame has alpha below 255; every `VP8L`
 /// then uses alpha, otherwise none does), `ANIM` (transparent
-/// background, infinite loop), then one full-canvas `ANMF` per frame that does
-/// not blend and does not dispose, so each frame replaces the previous one.
+/// background, infinite loop), then one `ANMF` per frame that does not blend
+/// and does not dispose: the first covers the canvas, each later one only the
+/// area that changed (extended to even offsets; 1x1 at (0, 0) when nothing
+/// changed), so the canvas always equals the current frame.
 /// Frames longer than [`MAX_DURATION_MS`] are written as several identical
 /// frames. Returns the bytes and the number of `ANMF` chunks.
 ///
@@ -159,6 +162,7 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
     chunk(&mut body, b"ANIM", &[0, 0, 0, 0, 0, 0]);
 
     let mut count = 0;
+    let mut previous: Option<&Image> = None;
     for frame in frames {
         assert_eq!(
             (frame.image.width(), frame.image.height()),
@@ -169,24 +173,40 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
             frame.duration_ms > 0,
             "zero-length frames are dropped earlier"
         );
-        let bitstream = vp8l(frame.image, alpha);
-        let mut header = Vec::with_capacity(16);
-        header.extend(u24(0)); // x / 2
-        header.extend(u24(0)); // y / 2
-        header.extend(u24(width - 1));
-        header.extend(u24(height - 1));
-        for duration in split_duration(frame.duration_ms) {
+        // The first part shows the new frame; the parts of a split duration
+        // after it change nothing.
+        let first_rect = match previous {
+            None => Rect::full(frame.image),
+            Some(prev) => {
+                delta::align_even(delta::changed_rect(prev, frame.image).unwrap_or(Rect::UNCHANGED))
+            }
+        };
+        let first = vp8l(&delta::crop(frame.image, first_rect), alpha);
+        let mut repeat: Option<Vec<u8>> = None;
+        for (part, duration) in split_duration(frame.duration_ms).enumerate() {
+            let (rect, bitstream) = if part == 0 {
+                (first_rect, &first)
+            } else {
+                let unchanged = repeat
+                    .get_or_insert_with(|| vp8l(&delta::crop(frame.image, Rect::UNCHANGED), alpha));
+                (Rect::UNCHANGED, &*unchanged)
+            };
             let frame_len = chunk_len(16 + chunk_len(bitstream.len()) as usize);
             if body.len() as u64 + frame_len + 4 > u64::from(u32::MAX) {
                 return Err(WebpError::TooLarge);
             }
-            let mut payload = header.clone();
+            let mut payload = Vec::with_capacity(16 + bitstream.len() + 9);
+            payload.extend(u24(rect.x / 2));
+            payload.extend(u24(rect.y / 2));
+            payload.extend(u24(rect.width - 1));
+            payload.extend(u24(rect.height - 1));
             payload.extend(u24(duration));
             payload.push(NO_BLEND_FLAG);
-            chunk(&mut payload, b"VP8L", &bitstream);
+            chunk(&mut payload, b"VP8L", bitstream);
             chunk(&mut body, b"ANMF", &payload);
             count += 1;
         }
+        previous = Some(frame.image);
     }
     Ok((riff(body)?, count))
 }

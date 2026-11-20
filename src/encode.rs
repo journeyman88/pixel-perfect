@@ -6,8 +6,9 @@
 
 use std::collections::HashMap;
 
+use crate::delta::{self, Rect};
 use crate::model::Rgba;
-use crate::raster::Image;
+use crate::raster::{Image, TRANSPARENT};
 
 /// Most colors an indexed PNG can hold.
 pub const MAX_PALETTE: usize = 256;
@@ -147,9 +148,86 @@ pub struct ApngFrame<'a> {
     pub delay: (u16, u16),
 }
 
+/// How one APNG frame after the first is written.
+struct FramePart {
+    rect: Rect,
+    image: Image,
+    blend: png::BlendOp,
+}
+
+/// Size of `image` encoded alone as a PNG with `encoding`: a measure of its
+/// compressed data, comparable between images of the same size.
+fn encoded_len(image: &Image, encoding: &Encoding) -> usize {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
+    let data = configure(&mut encoder, encoding.clone());
+    let mut writer = encoder
+        .write_header()
+        .expect("writing to a Vec cannot fail");
+    writer
+        .write_image_data(&data.of(image))
+        .expect("image data matches the header");
+    writer.finish().expect("writing to a Vec cannot fail");
+    out.len()
+}
+
+/// `rect` extended to the left edge for indexed APNGs at 2 or 4 bits per
+/// pixel: FFmpeg (8.1) decodes such sub-frames wrongly when their x offset is
+/// not 0, although the files are valid. Other encodings are left as they are.
+fn ffmpeg_safe(rect: Rect, encoding: &Encoding) -> Rect {
+    match encoding {
+        Encoding::Indexed {
+            bit_depth: 2 | 4, ..
+        } => Rect {
+            x: 0,
+            width: rect.x + rect.width,
+            ..rect
+        },
+        _ => rect,
+    }
+}
+
+/// The part of `next` to write after `prev`: the changed area with blend
+/// SOURCE, or, when every changed pixel is opaque and the encoding can store
+/// `(0, 0, 0, 0)`, the masked area with blend OVER if it compresses smaller.
+fn frame_part(prev: &Image, next: &Image, encoding: &Encoding) -> FramePart {
+    let Some(rect) = delta::changed_rect(prev, next).map(|r| ffmpeg_safe(r, encoding)) else {
+        return FramePart {
+            rect: Rect::UNCHANGED,
+            image: delta::crop(next, Rect::UNCHANGED),
+            blend: png::BlendOp::Source,
+        };
+    };
+    let area = FramePart {
+        rect,
+        image: delta::crop(next, rect),
+        blend: png::BlendOp::Source,
+    };
+    let can_mask = match encoding {
+        Encoding::Rgba => true,
+        Encoding::Indexed { palette, .. } => palette.contains(&TRANSPARENT),
+    };
+    if !can_mask {
+        return area;
+    }
+    match delta::masked(prev, next, rect) {
+        Some(masked) if encoded_len(&masked, encoding) < encoded_len(&area.image, encoding) => {
+            FramePart {
+                rect,
+                image: masked,
+                blend: png::BlendOp::Over,
+            }
+        }
+        _ => area,
+    }
+}
+
 /// Encodes an animation as APNG bytes: infinite loop, frame 0 as the default
-/// image, every frame on the full canvas with `dispose_op` NONE and `blend_op`
-/// SOURCE, one palette for all frames. Same frames, same bytes.
+/// image on the full canvas, one palette for all frames, `dispose_op` NONE.
+/// Every later frame covers only the area that changed since the previous
+/// one (1x1 at (0, 0) when nothing changed), either overwriting it (`blend_op`
+/// SOURCE) or, when smaller and exact, blending a masked area OVER it (see
+/// [`delta::masked`]). Same frames, same bytes.
 ///
 /// Panics if `frames` is empty or the images differ in size.
 pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
@@ -158,33 +236,49 @@ pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
         .expect("an animation has at least one frame")
         .image;
     let (width, height) = (first.width(), first.height());
+    let encoding = choose_all(frames.iter().map(|f| f.image));
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, width, height);
-    let data = configure(&mut encoder, choose_all(frames.iter().map(|f| f.image)));
+    let data = configure(&mut encoder, encoding.clone());
     encoder
         .set_animated(frames.len() as u32, 0)
         .expect("at least one frame");
     let mut writer = encoder
         .write_header()
         .expect("writing to a Vec cannot fail");
-    for frame in frames {
+    for (i, frame) in frames.iter().enumerate() {
         assert_eq!(
             (frame.image.width(), frame.image.height()),
             (width, height),
             "every frame has the canvas size"
         );
+        let part = match i {
+            0 => FramePart {
+                rect: Rect::full(frame.image),
+                image: frame.image.clone(),
+                blend: png::BlendOp::Source,
+            },
+            _ => frame_part(frames[i - 1].image, frame.image, &encoding),
+        };
+        // Position (0, 0) first, so that every size fits, then the size, then
+        // the real position.
+        writer.reset_frame_position().expect("animated writer");
+        writer
+            .set_frame_dimension(part.rect.width, part.rect.height)
+            .expect("the rectangle is inside the canvas");
+        writer
+            .set_frame_position(part.rect.x, part.rect.y)
+            .expect("the rectangle is inside the canvas");
         writer
             .set_frame_delay(frame.delay.0, frame.delay.1)
             .expect("animated writer");
         writer
             .set_dispose_op(png::DisposeOp::None)
             .expect("animated writer");
+        writer.set_blend_op(part.blend).expect("animated writer");
         writer
-            .set_blend_op(png::BlendOp::Source)
-            .expect("animated writer");
-        writer
-            .write_image_data(&data.of(frame.image))
-            .expect("image data matches the header");
+            .write_image_data(&data.of(&part.image))
+            .expect("image data matches the frame size");
     }
     writer.finish().expect("writing to a Vec cannot fail");
     out
