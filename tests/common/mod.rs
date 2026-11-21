@@ -15,6 +15,30 @@ pub fn fixture(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+/// `schema/manifest.schema.json` as a JSON value.
+pub fn manifest_schema() -> Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema/manifest.schema.json");
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// Fails, listing every violation, unless `manifest` is valid against
+/// `schema/manifest.schema.json`.
+pub fn assert_valid_manifest(manifest: &Value) {
+    static VALIDATOR: std::sync::OnceLock<jsonschema::Validator> = std::sync::OnceLock::new();
+    let validator = VALIDATOR.get_or_init(|| {
+        jsonschema::draft202012::new(&manifest_schema()).expect("manifest schema compiles")
+    });
+    let errors: Vec<String> = validator
+        .iter_errors(manifest)
+        .map(|e| format!("{}: {e}", e.instance_path()))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "manifest is not valid against the schema:\n{}\n{manifest:#}",
+        errors.join("\n")
+    );
+}
+
 /// The `valid/full.json` fixture as a JSON value, ready to be mutated.
 pub fn full() -> Value {
     let text = std::fs::read_to_string(fixture("valid/full.json")).unwrap();

@@ -308,8 +308,9 @@ fn render_webp() {
     let webp = std::fs::read(out.join("sprites/hero.webp")).unwrap();
     assert_eq!(&webp[0..4], b"RIFF");
     assert_eq!(&webp[8..16], b"WEBPVP8L");
-    let manifest = std::fs::read_to_string(out.join("manifest.json")).unwrap();
-    assert!(manifest.contains(r#""format": "webp""#), "{manifest}");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["options"]["format"], "webp", "{manifest}");
 }
 
 #[test]

@@ -4,18 +4,29 @@
 //! The worksheets in `examples/` stay valid and render with the encodings
 //! their comments promise.
 
+mod common;
 #[path = "common/images.rs"]
 mod images;
 
 use std::path::PathBuf;
 
 use images::header;
-use pixel_perfect::export::{self, OutputFormat, RenderOptions};
+use pixel_perfect::ResolvedWorksheet;
+use pixel_perfect::export::{self, Manifest, OutputFormat, Plan, RenderOptions};
 
 fn example(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join(name)
+}
+
+/// Renders like [`export::render`], then checks the written `manifest.json`
+/// against the manifest schema.
+fn render(ws: &ResolvedWorksheet, options: &RenderOptions) -> (Plan, Manifest) {
+    let result = export::render(ws, options).unwrap();
+    let text = std::fs::read_to_string(options.output_path.join("manifest.json")).unwrap();
+    common::assert_valid_manifest(&serde_json::from_str(&text).unwrap());
+    result
 }
 
 #[test]
@@ -29,7 +40,7 @@ fn sprites_example_covers_every_encoding() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, _) = export::render(&ws, &options).unwrap();
+    let (plan, _) = render(&ws, &options);
     assert!(plan.notices.is_empty());
 
     // (sprite, width, height, bit depth, color type: 3 indexed, 6 RGBA)
@@ -59,7 +70,7 @@ fn composition_example_renders_its_scene() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, _) = export::render(&ws, &options).unwrap();
+    let (plan, _) = render(&ws, &options);
     assert!(plan.notices.is_empty());
     assert_eq!(plan.outputs.len(), 8 + 3 + 1, "sprites, panels, scene");
 
@@ -86,7 +97,7 @@ fn masquerade_example_renders_its_scene() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, _) = export::render(&ws, &options).unwrap();
+    let (plan, _) = render(&ws, &options);
     assert!(plan.notices.is_empty());
     assert_eq!(plan.outputs.len(), 1, "only the scene is exported");
     let png = std::fs::read(dir.path().join("scenes/masquerade.png")).unwrap();
@@ -104,7 +115,7 @@ fn campfire_example_renders_its_animations() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    let (plan, manifest) = render(&ws, &options);
     assert!(plan.notices.is_empty());
     assert_eq!(plan.outputs.len(), 3);
     // (pointer, width, height, loop in seconds as num/den)
@@ -113,7 +124,7 @@ fn campfire_example_renders_its_animations() {
         ("/timelines/fire", 256, 256, (2, 1)),
         ("/scenes/campfire", 256, 256, (2, 1)),
     ] {
-        let entry = &manifest.files[pointer];
+        let entry = manifest.entry(pointer).unwrap();
         assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
         let fraction = entry.loop_seconds.expect("animated");
         assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
@@ -136,7 +147,7 @@ fn animation_example_renders_its_animations() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    let (plan, manifest) = render(&ws, &options);
     assert!(plan.notices.is_empty());
     assert_eq!(plan.outputs.len(), 4);
     // (pointer, width, height, loop in seconds as num/den)
@@ -146,7 +157,7 @@ fn animation_example_renders_its_animations() {
         ("/timelines/stroll", 48, 16, (8, 1)),
         ("/scenes/evening", 48, 16, (8, 1)),
     ] {
-        let entry = &manifest.files[pointer];
+        let entry = manifest.entry(pointer).unwrap();
         assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
         let fraction = entry.loop_seconds.expect("animated");
         assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
@@ -186,14 +197,14 @@ fn parallax_example_renders_its_sequence() {
         safe_build: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
-    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    let (plan, manifest) = render(&ws, &options);
     assert!(plan.notices.is_empty(), "{:?}", plan.notices);
-    let dusk = &manifest.files["/sequences/dusk"];
+    let dusk = manifest.entry("/sequences/dusk").unwrap();
     assert_eq!((dusk.width, dusk.height), (64, 32));
     assert_eq!(dusk.loop_seconds, Some(export::Fraction { num: 4, den: 1 }));
     let png = std::fs::read(dir.path().join(&dusk.path)).unwrap();
     assert!(images::chunks(&png).iter().any(|c| c == "acTL"));
-    let valley = &manifest.files["/scenes/valley"];
+    let valley = manifest.entry("/scenes/valley").unwrap();
     assert_eq!(
         valley.loop_seconds,
         Some(export::Fraction { num: 1, den: 2 })

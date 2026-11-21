@@ -232,6 +232,20 @@ fn webp_goldens_pass_webpinfo() {
     assert_eq!(checked, 40);
 }
 
+/// Every golden manifest is valid against `schema/manifest.schema.json`.
+#[test]
+fn golden_manifests_match_the_schema() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&root).unwrap() {
+        let path = entry.unwrap().path().join("manifest.json");
+        let text = std::fs::read_to_string(&path).unwrap();
+        common::assert_valid_manifest(&serde_json::from_str(&text).unwrap());
+        checked += 1;
+    }
+    assert_eq!(checked, 9, "one manifest per golden directory");
+}
+
 /// Every golden APNG, decoded by compositing its frames as the APNG
 /// specification defines, gives exactly the rendered frames of its resource.
 #[test]
@@ -250,11 +264,12 @@ fn golden_apngs_decode_to_the_rendered_frames() {
             &std::fs::read_to_string(root.join(name).join("manifest.json")).unwrap(),
         )
         .unwrap();
-        let scale = manifest["scale"].as_u64().unwrap() as u32;
-        for (pointer, entry) in manifest["files"].as_object().unwrap() {
-            if entry.get("frames").is_none() {
+        let scale = manifest["options"]["scale"].as_u64().unwrap() as u32;
+        for entry in manifest["files"].as_array().unwrap() {
+            if entry["kind"] != "animation" {
                 continue;
             }
+            let pointer = entry["id"].as_str().unwrap();
             let (collection, id) = pointer[1..].split_once('/').unwrap();
             let bytes =
                 std::fs::read(root.join(name).join(entry["path"].as_str().unwrap())).unwrap();

@@ -1,47 +1,65 @@
 {
-  "format": "png",
-  "scale": 1,
-  "safeBuild": false,
-  "files": {
-    "/panels/actors": {
+  "options": {
+    "format": "png",
+    "scale": 1,
+    "safeBuild": false
+  },
+  "files": [
+    {
+      "id": "/panels/actors",
+      "kind": "static",
       "path": "panels/actors.png",
       "width": 16,
       "height": 10
     },
-    "/panels/backdrop": {
+    {
+      "id": "/panels/backdrop",
+      "kind": "static",
       "path": "panels/backdrop.png",
       "width": 16,
       "height": 10
     },
-    "/scenes/clearing": {
+    {
+      "id": "/scenes/clearing",
+      "kind": "static",
       "path": "scenes/clearing.png",
       "width": 16,
       "height": 10
     },
-    "/sprites/fog": {
+    {
+      "id": "/sprites/fog",
+      "kind": "static",
       "path": "sprites/fog.png",
       "width": 8,
       "height": 2
     },
-    "/sprites/ground": {
+    {
+      "id": "/sprites/ground",
+      "kind": "static",
       "path": "sprites/ground.png",
       "width": 4,
       "height": 1
     },
-    "/sprites/moon": {
+    {
+      "id": "/sprites/moon",
+      "kind": "static",
       "path": "sprites/moon.png",
       "width": 4,
       "height": 4
     },
-    "/sprites/sky": {
+    {
+      "id": "/sprites/sky",
+      "kind": "static",
       "path": "sprites/sky.png",
       "width": 4,
       "height": 2
     },
-    "/sprites/slime": {
+    {
+      "id": "/sprites/slime",
+      "kind": "static",
       "path": "sprites/slime.png",
       "width": 4,
       "height": 5
     }
-  }
+  ]
 }

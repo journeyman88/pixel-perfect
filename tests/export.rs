@@ -208,12 +208,12 @@ fn implicit_exports_include_animations() {
         ("/timelines/walk", true),
         ("/scenes/night", true),
     ] {
-        let path = dir.path().join(&manifest.files[pointer].path);
+        let path = dir.path().join(&manifest.entry(pointer).unwrap().path);
         let bytes = std::fs::read(path).unwrap();
         let has_actl = images::chunks(&bytes).iter().any(|c| c == "acTL");
         assert_eq!(has_actl, animated, "{pointer}");
         assert_eq!(
-            manifest.files[pointer].frames.is_some(),
+            manifest.entry(pointer).unwrap().frame_count.is_some(),
             animated,
             "{pointer}"
         );
@@ -229,9 +229,9 @@ fn static_panel_and_scene_are_exported() {
         files(dir.path()),
         ["manifest.json", "panels/stage.png", "scenes/day.png"]
     );
-    let stage = &manifest.files["/panels/stage"];
+    let stage = manifest.entry("/panels/stage").unwrap();
     assert_eq!((stage.width, stage.height), (3, 1));
-    let day = &manifest.files["/scenes/day"];
+    let day = manifest.entry("/scenes/day").unwrap();
     assert_eq!((day.width, day.height), (4, 2));
     let (_, _, pixels) = images::decode(&std::fs::read(dir.path().join("scenes/day.png")).unwrap());
     let mixed = Rgba([127, 128, 0, 255]);
@@ -258,7 +258,12 @@ fn animated_resources_are_written_as_apng() {
             "timelines/walk.png"
         ]
     );
-    let size = |p: &str| (manifest.files[p].width, manifest.files[p].height);
+    let size = |p: &str| {
+        (
+            manifest.entry(p).unwrap().width,
+            manifest.entry(p).unwrap().height,
+        )
+    };
     assert_eq!(size("/flipbooks/spin"), (2, 1));
     assert_eq!(size("/timelines/walk"), (3, 1));
     assert_eq!(size("/scenes/night"), (4, 2));
@@ -302,9 +307,62 @@ fn animated_entry_in_the_manifest() {
         serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
             .unwrap();
     assert_eq!(
-        manifest["files"]["/flipbooks/spin"],
-        json!({ "path": "flipbooks/spin.png", "width": 8, "height": 8, "frames": 4, "loop": { "num": 1, "den": 2 } })
+        manifest["files"],
+        json!([{
+            "id": "/flipbooks/spin", "kind": "animation", "path": "flipbooks/spin.png",
+            "width": 8, "height": 8, "frameCount": 4, "loop": { "num": 1, "den": 2 }
+        }])
     );
+    common::assert_valid_manifest(&manifest);
+}
+
+#[test]
+fn manifest_schema_is_valid_draft_2020_12() {
+    jsonschema::meta::validate(&common::manifest_schema()).expect("valid against the meta-schema");
+}
+
+#[test]
+fn manifest_entries_are_sorted_by_id() {
+    let mut doc = json!({
+        "palettes": [{ "id": "p", "colors": [
+            { "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] }
+        ] }],
+        "sprites": [
+            { "id": "hero", "_palette": "p", "lines": ["a"] },
+            { "id": "coin", "_palette": "p", "lines": ["b"] }
+        ],
+        "flipbooks": [{ "id": "spin", "width": 1, "height": 1, "fps": 2, "frames": [
+            { "_sprite": "hero", "coordinates": [0, 0], "duration": 1 },
+            { "_sprite": "coin", "coordinates": [0, 0], "duration": 1 }
+        ] }]
+    });
+    doc["exports"] = json!(["/sprites/hero", "/sprites/coin", "/flipbooks/spin"]);
+    let ws = common::load(doc);
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&ws, &options(dir.path())).unwrap();
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
+            .unwrap();
+    let ids: Vec<&str> = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["/flipbooks/spin", "/sprites/coin", "/sprites/hero"]);
+    common::assert_valid_manifest(&manifest);
+}
+
+#[test]
+fn manifest_with_nothing_to_export() {
+    let ws = pixel_perfect::load_file(&common::fixture("valid/palettes-only.json")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&ws, &options(dir.path())).unwrap();
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["files"], json!([]));
+    common::assert_valid_manifest(&manifest);
 }
 
 #[test]
@@ -566,7 +624,7 @@ fn safe_build_names_by_hash() {
         "{hashed:?}"
     );
     assert_eq!(
-        manifest.files["/sprites/ui/button"].path,
+        manifest.entry("/sprites/ui/button").unwrap().path,
         format!("sprites/{}.png", export::id_hash("ui/button"))
     );
 }
@@ -605,12 +663,13 @@ fn manifest_content() {
     assert_eq!(
         manifest,
         json!({
-            "format": "png",
-            "scale": 2,
-            "safeBuild": false,
-            "files": { "/sprites/hero": { "path": "sprites/hero.png", "width": 6, "height": 4 } }
+            "options": { "format": "png", "scale": 2, "safeBuild": false },
+            "files": [
+                { "id": "/sprites/hero", "kind": "static", "path": "sprites/hero.png", "width": 6, "height": 4 }
+            ]
         })
     );
+    common::assert_valid_manifest(&manifest);
     let (w, h, _) = images::decode(&std::fs::read(dir.path().join("sprites/hero.png")).unwrap());
     assert_eq!((w, h), (6, 4));
 }
@@ -624,9 +683,9 @@ fn manifest_in_safe_build() {
     };
     let plan = export::plan(&ws, &opts).unwrap();
     let manifest = export::manifest(&plan, &opts);
-    assert!(manifest.safe_build);
+    assert!(manifest.options.safe_build);
     assert_eq!(
-        manifest.files["/sprites/hero"].path,
+        manifest.entry("/sprites/hero").unwrap().path,
         "sprites/8737b11b474b218b.png"
     );
 }
@@ -737,7 +796,7 @@ fn webp_paths_and_manifest() {
     let ws = compositions(None);
     let dir = tempfile::tempdir().unwrap();
     let (_, manifest) = export::render(&ws, &webp_options(dir.path())).unwrap();
-    assert_eq!(manifest.format, "webp");
+    assert_eq!(manifest.options.format, "webp");
     let written = files(dir.path());
     assert!(written.contains(&"manifest.json".to_owned()));
     for file in written.iter().filter(|f| *f != "manifest.json") {
@@ -746,10 +805,10 @@ fn webp_paths_and_manifest() {
         let chunks = images::webp_chunks(&bytes);
         let entry = manifest
             .files
-            .values()
+            .iter()
             .find(|e| &e.path == file)
             .expect("listed in the manifest");
-        match entry.frames {
+        match entry.frame_count {
             Some(frames) => {
                 assert_eq!(chunks[0].fourcc, "VP8X", "{file}");
                 assert_eq!(
@@ -816,7 +875,7 @@ fn webp_accepts_rates_that_apng_rejects() {
     let ws = denominator_scene();
     let dir = tempfile::tempdir().unwrap();
     let (_, manifest) = export::render(&ws, &webp_options(dir.path())).unwrap();
-    assert!(manifest.files["/scenes/s"].frames.unwrap() > 0);
+    assert!(manifest.entry("/scenes/s").unwrap().frame_count.unwrap() > 0);
 }
 
 #[test]
@@ -897,12 +956,12 @@ fn sequence_is_written_as_apng_with_the_scene_size() {
     assert!(images::chunks(&png).iter().any(|c| c == "acTL"));
     assert_eq!(images::header(&png).0, 8);
     assert_eq!(images::header(&png).1, 4);
-    let entry = &manifest.files["/sequences/drift"];
+    let entry = manifest.entry("/sequences/drift").unwrap();
     assert_eq!(
         (entry.path.as_str(), entry.width, entry.height),
         ("sequences/drift.png", 8, 4)
     );
-    assert!(entry.frames.is_some_and(|n| n > 1));
+    assert!(entry.frame_count.is_some_and(|n| n > 1));
     assert_eq!(
         entry.loop_seconds,
         Some(export::Fraction { num: 2, den: 1 })
@@ -922,7 +981,7 @@ fn sequence_is_written_as_animated_webp() {
         .collect();
     assert_eq!(&names[..2], ["VP8X", "ANIM"]);
     assert_eq!(
-        manifest.files["/sequences/drift"].path,
+        manifest.entry("/sequences/drift").unwrap().path,
         "sequences/drift.webp"
     );
 }
@@ -933,7 +992,11 @@ fn explicit_sequence_export() {
     doc["exports"] = json!(["/sequences/drift"]);
     let (_, _, manifest) = render_sequence(doc, OutputFormat::Png);
     assert_eq!(
-        manifest.files.keys().collect::<Vec<_>>(),
+        manifest
+            .files
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect::<Vec<_>>(),
         ["/sequences/drift"]
     );
 }
@@ -954,7 +1017,7 @@ fn longer_loop_prints_a_notice() {
         ]
     );
     assert_eq!(
-        manifest.files["/sequences/drift"].loop_seconds,
+        manifest.entry("/sequences/drift").unwrap().loop_seconds,
         Some(export::Fraction { num: 5, den: 2 })
     );
 }

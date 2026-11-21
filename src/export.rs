@@ -7,7 +7,7 @@
 //! all errors without touching the disk; [`write`] renders and writes only a
 //! clean plan, so an invalid request never leaves a half-written output.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b, Digest, digest::consts::U8};
@@ -177,27 +177,81 @@ pub struct Plan {
     pub notices: Vec<String>,
 }
 
-/// The `manifest.json` written next to the outputs.
+/// The `manifest.json` written next to the outputs, as defined by
+/// `schema/manifest.schema.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Manifest {
+    pub options: ManifestOptions,
+    /// One entry per exported resource, sorted by `id`.
+    pub files: Vec<ManifestEntry>,
+}
+
+impl Manifest {
+    /// The entry of the resource with export pointer `id`.
+    pub fn entry(&self, id: &str) -> Option<&ManifestEntry> {
+        let i = self
+            .files
+            .binary_search_by(|e| e.id.as_str().cmp(id))
+            .ok()?;
+        Some(&self.files[i])
+    }
+}
+
+/// The command-line options a render was made with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Manifest {
+pub struct ManifestOptions {
     pub format: &'static str,
     pub scale: u32,
     pub safe_build: bool,
-    pub files: BTreeMap<String, ManifestEntry>,
 }
 
+/// How a resource was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EntryKind {
+    /// A single still image.
+    Static,
+    /// A single animated image.
+    Animation,
+}
+
+/// Fields are serialized in declaration order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
+    /// Export pointer, e.g. `/sprites/hero`.
+    pub id: String,
+    pub kind: EntryKind,
     pub path: String,
     pub width: u32,
     pub height: u32,
     /// Frames written, for animated resources.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub frames: Option<usize>,
+    pub frame_count: Option<usize>,
     /// Loop length in seconds, for animated resources.
     #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
     pub loop_seconds: Option<Fraction>,
+}
+
+impl ManifestEntry {
+    /// The entry of `output`; animated exactly when it has a loop length.
+    /// `frame_count` is filled in when the animation is encoded.
+    fn new(output: &PlannedOutput) -> Self {
+        Self {
+            id: output.pointer.clone(),
+            kind: if output.loop_seconds.is_some() {
+                EntryKind::Animation
+            } else {
+                EntryKind::Static
+            },
+            path: output.path.clone(),
+            width: output.width,
+            height: output.height,
+            frame_count: None,
+            loop_seconds: output.loop_seconds,
+        }
+    }
 }
 
 /// Why a render failed.
@@ -742,26 +796,15 @@ pub fn animation_bytes(
 
 /// Builds the manifest of a plan. `frames` is filled in by [`write`].
 pub fn manifest(plan: &Plan, options: &RenderOptions) -> Manifest {
+    let mut files: Vec<ManifestEntry> = plan.outputs.iter().map(ManifestEntry::new).collect();
+    files.sort_by(|a, b| a.id.cmp(&b.id));
     Manifest {
-        format: options.format.extension(),
-        scale: options.scale,
-        safe_build: options.safe_build,
-        files: plan
-            .outputs
-            .iter()
-            .map(|o| {
-                (
-                    o.pointer.clone(),
-                    ManifestEntry {
-                        path: o.path.clone(),
-                        width: o.width,
-                        height: o.height,
-                        frames: None,
-                        loop_seconds: o.loop_seconds,
-                    },
-                )
-            })
-            .collect(),
+        options: ManifestOptions {
+            format: options.format.extension(),
+            scale: options.scale,
+            safe_build: options.safe_build,
+        },
+        files,
     }
 }
 
@@ -790,8 +833,11 @@ pub fn write(
                     pointer: output.pointer.clone(),
                     source,
                 })?;
-            if let Some(entry) = manifest.files.get_mut(&output.pointer) {
-                entry.frames = Some(frames);
+            if let Ok(i) = manifest
+                .files
+                .binary_search_by(|e| e.id.as_str().cmp(&output.pointer))
+            {
+                manifest.files[i].frame_count = Some(frames);
             }
             bytes
         } else {

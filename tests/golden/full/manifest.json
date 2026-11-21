@@ -1,57 +1,73 @@
 {
-  "format": "png",
-  "scale": 1,
-  "safeBuild": false,
-  "files": {
-    "/flipbooks/spin": {
+  "options": {
+    "format": "png",
+    "scale": 1,
+    "safeBuild": false
+  },
+  "files": [
+    {
+      "id": "/flipbooks/spin",
+      "kind": "animation",
       "path": "flipbooks/spin.png",
       "width": 8,
       "height": 8,
-      "frames": 4,
+      "frameCount": 4,
       "loop": {
         "num": 1,
         "den": 2
       }
     },
-    "/panels/stage": {
+    {
+      "id": "/panels/stage",
+      "kind": "static",
       "path": "panels/stage.png",
       "width": 32,
       "height": 16
     },
-    "/scenes/night": {
+    {
+      "id": "/scenes/night",
+      "kind": "animation",
       "path": "scenes/night.png",
       "width": 64,
       "height": 32,
-      "frames": 30,
+      "frameCount": 30,
       "loop": {
         "num": 4,
         "den": 1
       }
     },
-    "/sprites/block": {
+    {
+      "id": "/sprites/block",
+      "kind": "static",
       "path": "sprites/block.png",
       "width": 4,
       "height": 8
     },
-    "/sprites/block-deep": {
+    {
+      "id": "/sprites/block-deep",
+      "kind": "static",
       "path": "sprites/block-deep.png",
       "width": 4,
       "height": 8
     },
-    "/sprites/block-night": {
+    {
+      "id": "/sprites/block-night",
+      "kind": "static",
       "path": "sprites/block-night.png",
       "width": 4,
       "height": 8
     },
-    "/timelines/walk": {
+    {
+      "id": "/timelines/walk",
+      "kind": "animation",
       "path": "timelines/walk.png",
       "width": 32,
       "height": 16,
-      "frames": 30,
+      "frameCount": 30,
       "loop": {
         "num": 4,
         "den": 1
       }
     }
-  }
+  ]
 }

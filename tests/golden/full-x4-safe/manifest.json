@@ -1,57 +1,73 @@
 {
-  "format": "png",
-  "scale": 4,
-  "safeBuild": true,
-  "files": {
-    "/flipbooks/spin": {
+  "options": {
+    "format": "png",
+    "scale": 4,
+    "safeBuild": true
+  },
+  "files": [
+    {
+      "id": "/flipbooks/spin",
+      "kind": "animation",
       "path": "flipbooks/7da354dc6053cc97.png",
       "width": 32,
       "height": 32,
-      "frames": 4,
+      "frameCount": 4,
       "loop": {
         "num": 1,
         "den": 2
       }
     },
-    "/panels/stage": {
+    {
+      "id": "/panels/stage",
+      "kind": "static",
       "path": "panels/862b22a72d9a59b6.png",
       "width": 128,
       "height": 64
     },
-    "/scenes/night": {
+    {
+      "id": "/scenes/night",
+      "kind": "animation",
       "path": "scenes/27bc2f75fc4732ab.png",
       "width": 256,
       "height": 128,
-      "frames": 30,
+      "frameCount": 30,
       "loop": {
         "num": 4,
         "den": 1
       }
     },
-    "/sprites/block": {
+    {
+      "id": "/sprites/block",
+      "kind": "static",
       "path": "sprites/049a3c8654f8ca03.png",
       "width": 16,
       "height": 32
     },
-    "/sprites/block-deep": {
+    {
+      "id": "/sprites/block-deep",
+      "kind": "static",
       "path": "sprites/9840fcd43a47d9b8.png",
       "width": 16,
       "height": 32
     },
-    "/sprites/block-night": {
+    {
+      "id": "/sprites/block-night",
+      "kind": "static",
       "path": "sprites/c721bd8d86188812.png",
       "width": 16,
       "height": 32
     },
-    "/timelines/walk": {
+    {
+      "id": "/timelines/walk",
+      "kind": "animation",
       "path": "timelines/2a341b653f774530.png",
       "width": 128,
       "height": 64,
-      "frames": 30,
+      "frameCount": 30,
       "loop": {
         "num": 4,
         "den": 1
       }
     }
-  }
+  ]
 }

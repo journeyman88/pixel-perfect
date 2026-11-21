@@ -3,7 +3,7 @@
     "$id": "urn:pixelPerfect:manifest:v1",
     "title": "Pixel Perfect Manifest",
     "description": "Index of the files written by a render: the options it was made with and, for every exported resource, where its images are and how to read them. Written to <output-path>/manifest.json. Fields with a default may be omitted; consumers must treat a missing field as its default and ignore fields they do not know.",
-    "$comment": "Engine: keys sorted, pretty-printed, ending with a newline; byte-identical for identical renders.",
+    "$comment": "Engine: entries sorted by id, fields in a fixed order, pretty-printed, ending with a newline; byte-identical for identical renders.",
     "type": "object",
     "properties": {
         "$schema": {

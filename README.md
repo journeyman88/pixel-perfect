@@ -55,25 +55,39 @@ rejected. With `--safe-build`, files are named
 BLAKE2b-64 of the id (`printf '%s' hero | b2sum -l 64` → `8737b11b474b218b`).
 Any id then works, and a file keeps its name as long as its id is unchanged.
 
-Every render also writes `<output-path>/manifest.json`, mapping each exported
-resource to its file and size, so tools never have to guess file names.
-Animated resources also give the number of `frames` written and the `loop`
+Every render also writes `<output-path>/manifest.json`, so tools that package
+the output, for example into a game engine, never have to guess file names.
+It records the `options` of the render and lists every exported resource in
+`files`, sorted by `id` (its export pointer). The `kind` of each entry says how
+to read it. A `static` entry is one still image. An `animation` entry is one
+animated image, with the number of frames written (`frameCount`) and the `loop`
 length in seconds as an exact fraction:
 
 ```json
 {
-  "format": "png",
-  "scale": 4,
-  "safeBuild": false,
-  "files": {
-    "/sprites/hero": { "path": "sprites/hero.png", "width": 28, "height": 24 },
-    "/flipbooks/beat": {
-      "path": "flipbooks/beat.png", "width": 28, "height": 24,
-      "frames": 2, "loop": { "num": 1, "den": 1 }
-    }
-  }
+  "options": { "format": "png", "scale": 4, "safeBuild": false },
+  "files": [
+    {
+      "id": "/flipbooks/beat", "kind": "animation", "path": "flipbooks/beat.png",
+      "width": 28, "height": 24, "frameCount": 2, "loop": { "num": 1, "den": 1 }
+    },
+    { "id": "/sprites/hero", "kind": "static", "path": "sprites/hero.png", "width": 28, "height": 24 }
+  ]
 }
 ```
+
+`width` and `height` are measured after scaling. The source size in pixels is
+`width / scale`, which is what you need to set pixels-per-unit on import.
+
+The format is defined by [`schema/manifest.schema.json`](schema/manifest.schema.json)
+(JSON Schema draft 2020-12), and every manifest the engine writes validates
+against it. To stay compatible with later versions, a consumer must:
+
+- ignore fields it does not know;
+- treat a missing optional field as its default.
+
+New command-line options are added under `options`, and new output formats
+appear as new `format` values. Neither change needs a new schema version.
 
 Each image is stored as an **indexed PNG** (1, 2, 4 or 8 bits per pixel) when
 it has at most 256 distinct colors, and as **RGBA** otherwise. The count is

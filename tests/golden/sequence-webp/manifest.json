@@ -1,87 +1,115 @@
 {
-  "format": "webp",
-  "scale": 1,
-  "safeBuild": false,
-  "files": {
-    "/panels/fire": {
+  "options": {
+    "format": "webp",
+    "scale": 1,
+    "safeBuild": false
+  },
+  "files": [
+    {
+      "id": "/panels/fire",
+      "kind": "static",
       "path": "panels/fire.webp",
       "width": 1,
       "height": 1
     },
-    "/panels/glow": {
+    {
+      "id": "/panels/glow",
+      "kind": "static",
       "path": "panels/glow.webp",
       "width": 3,
       "height": 1
     },
-    "/panels/hills": {
+    {
+      "id": "/panels/hills",
+      "kind": "static",
       "path": "panels/hills.webp",
       "width": 4,
       "height": 1
     },
-    "/panels/sky": {
+    {
+      "id": "/panels/sky",
+      "kind": "static",
       "path": "panels/sky.webp",
       "width": 8,
       "height": 4
     },
-    "/panels/trees": {
+    {
+      "id": "/panels/trees",
+      "kind": "static",
       "path": "panels/trees.webp",
       "width": 2,
       "height": 1
     },
-    "/scenes/valley": {
+    {
+      "id": "/scenes/valley",
+      "kind": "animation",
       "path": "scenes/valley.webp",
       "width": 8,
       "height": 4,
-      "frames": 2,
+      "frameCount": 2,
       "loop": {
         "num": 1,
         "den": 2
       }
     },
-    "/sequences/drift": {
+    {
+      "id": "/sequences/drift",
+      "kind": "animation",
       "path": "sequences/drift.webp",
       "width": 8,
       "height": 4,
-      "frames": 12,
+      "frameCount": 12,
       "loop": {
         "num": 2,
         "den": 1
       }
     },
-    "/sprites/flame": {
+    {
+      "id": "/sprites/flame",
+      "kind": "static",
       "path": "sprites/flame.webp",
       "width": 1,
       "height": 1
     },
-    "/sprites/glow": {
+    {
+      "id": "/sprites/glow",
+      "kind": "static",
       "path": "sprites/glow.webp",
       "width": 3,
       "height": 1
     },
-    "/sprites/hill": {
+    {
+      "id": "/sprites/hill",
+      "kind": "static",
       "path": "sprites/hill.webp",
       "width": 4,
       "height": 1
     },
-    "/sprites/sky": {
+    {
+      "id": "/sprites/sky",
+      "kind": "static",
       "path": "sprites/sky.webp",
       "width": 8,
       "height": 1
     },
-    "/sprites/tree": {
+    {
+      "id": "/sprites/tree",
+      "kind": "static",
       "path": "sprites/tree.webp",
       "width": 2,
       "height": 1
     },
-    "/timelines/flicker": {
+    {
+      "id": "/timelines/flicker",
+      "kind": "animation",
       "path": "timelines/flicker.webp",
       "width": 1,
       "height": 1,
-      "frames": 2,
+      "frameCount": 2,
       "loop": {
         "num": 1,
         "den": 2
       }
     }
-  }
+  ]
 }

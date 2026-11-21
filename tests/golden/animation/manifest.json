@@ -1,87 +1,113 @@
 {
-  "format": "png",
-  "scale": 1,
-  "safeBuild": false,
-  "files": {
-    "/flipbooks/sparkle": {
+  "options": {
+    "format": "png",
+    "scale": 1,
+    "safeBuild": false
+  },
+  "files": [
+    {
+      "id": "/flipbooks/sparkle",
+      "kind": "animation",
       "path": "flipbooks/sparkle.png",
       "width": 1,
       "height": 1,
-      "frames": 3,
+      "frameCount": 3,
       "loop": {
         "num": 1,
         "den": 2
       }
     },
-    "/panels/dance-floor": {
+    {
+      "id": "/panels/dance-floor",
+      "kind": "static",
       "path": "panels/dance-floor.png",
       "width": 8,
       "height": 4
     },
-    "/panels/lamp": {
+    {
+      "id": "/panels/lamp",
+      "kind": "static",
       "path": "panels/lamp.png",
       "width": 4,
       "height": 4
     },
-    "/scenes/show": {
+    {
+      "id": "/scenes/show",
+      "kind": "animation",
       "path": "scenes/show.png",
       "width": 12,
       "height": 4,
-      "frames": 20,
+      "frameCount": 20,
       "loop": {
         "num": 2,
         "den": 1
       }
     },
-    "/sprites/floor": {
+    {
+      "id": "/sprites/floor",
+      "kind": "static",
       "path": "sprites/floor.png",
       "width": 8,
       "height": 4
     },
-    "/sprites/hero": {
+    {
+      "id": "/sprites/hero",
+      "kind": "static",
       "path": "sprites/hero.png",
       "width": 2,
       "height": 2
     },
-    "/sprites/lamp-off": {
+    {
+      "id": "/sprites/lamp-off",
+      "kind": "static",
       "path": "sprites/lamp-off.png",
       "width": 2,
       "height": 2
     },
-    "/sprites/lamp-on": {
+    {
+      "id": "/sprites/lamp-on",
+      "kind": "static",
       "path": "sprites/lamp-on.png",
       "width": 2,
       "height": 2
     },
-    "/sprites/spark-a": {
+    {
+      "id": "/sprites/spark-a",
+      "kind": "static",
       "path": "sprites/spark-a.png",
       "width": 1,
       "height": 1
     },
-    "/sprites/spark-b": {
+    {
+      "id": "/sprites/spark-b",
+      "kind": "static",
       "path": "sprites/spark-b.png",
       "width": 1,
       "height": 1
     },
-    "/timelines/dance": {
+    {
+      "id": "/timelines/dance",
+      "kind": "animation",
       "path": "timelines/dance.png",
       "width": 8,
       "height": 4,
-      "frames": 19,
+      "frameCount": 19,
       "loop": {
         "num": 2,
         "den": 1
       }
     },
-    "/timelines/pulse": {
+    {
+      "id": "/timelines/pulse",
+      "kind": "animation",
       "path": "timelines/pulse.png",
       "width": 4,
       "height": 4,
-      "frames": 2,
+      "frameCount": 2,
       "loop": {
         "num": 1,
         "den": 1
       }
     }
-  }
+  ]
 }

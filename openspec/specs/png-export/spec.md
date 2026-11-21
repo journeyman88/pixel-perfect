@@ -24,7 +24,7 @@ worksheet as `validate` does and write nothing if the worksheet is invalid.
 
 #### Scenario: Render as WebP
 - **WHEN** `pixel-perfect render hero.json -o out --format webp` runs on the same worksheet
-- **THEN** `out/sprites/hero.webp` and `out/manifest.json` (with `format` `"webp"`) are written and the exit code is 0
+- **THEN** `out/sprites/hero.webp` and `out/manifest.json` (with `options.format` `"webp"`) are written and the exit code is 0
 
 #### Scenario: Invalid worksheet
 - **WHEN** `pixel-perfect render broken.json -o out` runs on an invalid worksheet
@@ -95,27 +95,62 @@ produce the same hash, rendering SHALL fail before writing anything.
 
 ### Requirement: Manifest
 Every successful render SHALL write `<output-path>/manifest.json`, overwriting
-any previous one. It SHALL contain the output `format`, the `scale`, whether
-`safeBuild` was used, and a `files` object keyed by export pointer
-(`/<collection>/<id>`), whose values give the `path` of the file relative to the
-output path (with `/` separators) and its `width` and `height` in pixels after
-scaling. Entries of animated resources SHALL also give `frames`, the number of
-frames written, and `loop`, the loop length in seconds as an object
-`{ "num": n, "den": d }` reduced to lowest terms. Keys SHALL be sorted, and the
-file SHALL be pretty-printed JSON ending with a newline, so it is
-byte-identical for identical renders.
+any previous one. The manifest SHALL be valid against
+`schema/manifest.schema.json`. That schema is the normative definition of the
+format, and the rules below are how the engine fills it in.
+
+The root SHALL contain `options` and `files`.
+
+`options` SHALL contain:
+- `format`: the output format;
+- `scale`;
+- `safeBuild`: whether `--safe-build` was used.
+
+It SHALL NOT contain `singleFrames`, because single-frame output is not
+supported.
+
+`files` SHALL be an array with one entry per exported resource, sorted by `id`.
+It SHALL be empty when nothing is exported. Each entry SHALL give:
+- `id`: the export pointer `/<collection>/<id>`, with the id as written in the
+  worksheet;
+- `kind`;
+- `path`: the path of the file, relative to the output path, with `/`
+  separators;
+- `width` and `height`: the size in pixels after scaling.
+
+Static resources SHALL have `kind` `"static"` and no other fields. Animated
+resources SHALL have `kind` `"animation"` and SHALL also give:
+- `frameCount`: the number of frames written to the file;
+- `loop`: the loop length in seconds, as an object `{ "num": n, "den": d }`
+  reduced to lowest terms.
+
+The engine SHALL NOT write `kind` `"frameCollection"`. Fields SHALL be written
+in a fixed order, and the file SHALL be pretty-printed JSON ending with a
+newline, so it is byte-identical for identical renders.
 
 #### Scenario: Manifest content
 - **WHEN** sprite `hero` (16x16) is rendered with `--scale 2`
-- **THEN** `manifest.json` has `format` `"png"`, `scale` 2, `safeBuild` false, and `files["/sprites/hero"]` = `{ "path": "sprites/hero.png", "width": 32, "height": 32 }`
+- **THEN** `manifest.json` has `options` = `{ "format": "png", "scale": 2, "safeBuild": false }` and `files` = `[{ "id": "/sprites/hero", "kind": "static", "path": "sprites/hero.png", "width": 32, "height": 32 }]`
 
 #### Scenario: Manifest in safe build
 - **WHEN** sprite `hero` is rendered with `--safe-build`
-- **THEN** `files["/sprites/hero"].path` is `sprites/8737b11b474b218b.png` and `safeBuild` is true
+- **THEN** the entry with `id` `/sprites/hero` has `path` `sprites/8737b11b474b218b.png` and `options.safeBuild` is true
 
 #### Scenario: Animated entry
 - **WHEN** flipbook `spin` (8x8, `fps` 12, frame durations 2, 2, 1, 1, all different) is rendered
-- **THEN** `files["/flipbooks/spin"]` = `{ "path": "flipbooks/spin.png", "width": 8, "height": 8, "frames": 4, "loop": { "num": 1, "den": 2 } }`
+- **THEN** its entry is `{ "id": "/flipbooks/spin", "kind": "animation", "path": "flipbooks/spin.png", "width": 8, "height": 8, "frameCount": 4, "loop": { "num": 1, "den": 2 } }`
+
+#### Scenario: Entries sorted by id
+- **WHEN** sprites `hero` and `coin` and flipbook `spin` are exported, with `exports` listing them in that order
+- **THEN** the `id`s in `files` are, in order, `/flipbooks/spin`, `/sprites/coin`, `/sprites/hero`
+
+#### Scenario: Nothing to export
+- **WHEN** a worksheet that defines only palettes is rendered
+- **THEN** rendering succeeds and `files` is an empty array
+
+#### Scenario: Valid against the schema
+- **WHEN** any example or test fixture is rendered, as PNG or WebP, at any scale, with or without `--safe-build`
+- **THEN** the written `manifest.json` is valid against `schema/manifest.schema.json`
 
 ### Requirement: Export selection
 The engine SHALL render the resources listed in `exports`, or, when `exports` is
