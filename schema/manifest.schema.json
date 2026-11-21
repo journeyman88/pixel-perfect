@@ -1,0 +1,175 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:pixelPerfect:manifest:v1",
+    "title": "Pixel Perfect Manifest",
+    "description": "Index of the files written by a render: the options it was made with and, for every exported resource, where its images are and how to read them. Written to <output-path>/manifest.json. Fields with a default may be omitted; consumers must treat a missing field as its default and ignore fields they do not know.",
+    "$comment": "Engine: keys sorted, pretty-printed, ending with a newline; byte-identical for identical renders.",
+    "type": "object",
+    "properties": {
+        "$schema": {
+            "description": "Optional path or URL of this schema, for editors and third-party tools.",
+            "type": "string"
+        },
+        "options": { "$ref": "#/$defs/options" },
+        "files": {
+            "description": "One entry per exported resource. Empty when the worksheet has nothing to export.",
+            "$comment": "Engine: entries sorted by id; ids are unique.",
+            "type": "array",
+            "items": { "$ref": "#/$defs/render" }
+        }
+    },
+    "required" : ["options", "files"],
+    "unevaluatedProperties": false,
+    "$defs": {
+        "options" : {
+            "description": "The command-line options the render was made with. Entries in files can be read without them, but scale is needed to recover source pixel sizes (width / scale).",
+            "$comment": "Open on purpose: new command-line options are added here without a new schema version.",
+            "type" : "object",
+            "properties" : {
+                "format": {
+                    "description": "Output image format, as given by --format (e.g. \"png\", \"webp\").",
+                    "$comment": "Not an enum on purpose: new formats do not change the contract.",
+                    "type": "string",
+                    "default": "png"
+                },
+                "scale": {
+                    "description": "Integer upscale factor (--scale): every source pixel became a scale×scale block. width and height in files are already scaled; source size in pixels is width / scale, use it to set pixels-per-unit when importing.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64,
+                    "default": 1
+                },
+                "safeBuild": {
+                    "description": "Whether --safe-build was used, i.e. files are named by a hash of their id instead of the id itself. Hashed names are stable as long as the id is unchanged.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "singleFrames": {
+                    "description": "Whether animations were written as one image per frame (kind frameCollection) instead of a single animated image.",
+                    "type": "boolean",
+                    "default": false
+                }
+            },
+            "unevaluatedProperties": true
+        },
+        "path": {
+            "description": "Path of an image file, relative to the output path, with / separators.",
+            "type": "string"
+        },
+        "fractional": {
+            "description": "Duration in seconds as an exact fraction num/den, so it can be converted to milliseconds, ticks or frames without accumulated rounding.",
+            "$comment": "Engine: reduced to lowest terms; always > 0, since every worksheet duration is at least one frame-unit.",
+            "type": "object",
+            "properties": {
+                "num": {
+                    "description": "Numerator.",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "den": {
+                    "description": "Denominator.",
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "required": ["num", "den"],
+            "unevaluatedProperties": false
+        },
+        "frame": {
+            "description": "One frame of a frameCollection.",
+            "type": "object",
+            "properties": {
+                "index": {
+                    "description": "Position of the frame in playback order, from 0.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "path": { "$ref": "#/$defs/path" },
+                "duration": {
+                    "$ref": "#/$defs/fractional",
+                    "description": "How long the frame is shown; always > 0."
+                }
+            },
+            "required": ["index", "path", "duration"],
+            "unevaluatedProperties": false
+        },
+        "render": {
+            "description": "An exported resource and the file(s) written for it. kind says which other fields are present.",
+            "type": "object",
+            "properties": {
+                "id" : {
+                    "description": "Export pointer of the resource, /<collection>/<id>, with the id as written in the worksheet (it may contain /). Stable key for referencing the resource from game code; use it instead of path.",
+                    "type": "string",
+                    "pattern": "^/(sprites|flipbooks|panels|timelines|scenes|sequences)/.+$"
+                },
+                "width": {
+                    "description": "Image width in pixels, after scaling. For a frameCollection, the width of every frame.",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "height": {
+                    "description": "Image height in pixels, after scaling. For a frameCollection, the height of every frame.",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "kind": {
+                    "description": "How the resource was written: static, a single still image (path); animation, a single animated image (path, frameCount, loop); frameCollection, one image per frame (frames, loop).",
+                    "enum": ["static", "animation", "frameCollection"]
+                }
+            },
+            "required" : ["id", "width", "height", "kind"],
+            "unevaluatedProperties": false,
+            "allOf": [
+                {
+                    "if": { "properties": { "kind": { "const": "static" } }, "required": ["kind"] },
+                    "then": {
+                        "description": "The resource is a static image, exported as a single file.",
+                        "properties": {
+                            "path": { "$ref": "#/$defs/path" }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "if": { "properties": { "kind": { "const": "animation" } }, "required": ["kind"] },
+                    "then": {
+                        "description": "The resource is an animation, exported as a single file.",
+                        "properties": {
+                            "path": { "$ref": "#/$defs/path" },
+                            "frameCount": {
+                                "description": "Number of frames in the animated image.",
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "loop": {
+                                "$ref": "#/$defs/fractional",
+                                "description": "Length of one loop of the animation."
+                            }
+                        },
+                        "required": ["path", "frameCount", "loop"]
+                    }
+                },
+                {
+                    "if": { "properties": { "kind": { "const": "frameCollection" } }, "required": ["kind"] },
+                    "then": {
+                        "description": "The resource is an animation, exported as a group of files each containing a full frame.",
+                        "properties": {
+                            "frames" : {
+                                "description": "The frame images; array order is playback order.",
+                                "$comment": "Engine: frames sorted by index, indices 0..n-1 without gaps; durations sum to loop.",
+                                "type": "array",
+                                "items": { "$ref": "#/$defs/frame" },
+                                "minItems": 1
+                            },
+                            "loop": {
+                                "$ref": "#/$defs/fractional",
+                                "description": "Length of one loop; the sum of the frame durations."
+                            }
+                        },
+                        "required": ["frames", "loop"]
+                    }
+                }
+            ]
+        }
+    }
+}

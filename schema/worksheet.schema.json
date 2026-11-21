@@ -58,7 +58,7 @@
             "type": "array",
             "items": {
                 "type": "string",
-                "pattern": "^/(sprites|flipbooks|panels|timelines|scenes|sequences)/[^/]+$"
+                "pattern": "^/(sprites|flipbooks|panels|timelines|scenes|sequences)/.+$"
             },
             "minItems": 1,
             "uniqueItems": true
