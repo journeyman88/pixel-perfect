@@ -128,9 +128,16 @@ fn configure<W: std::io::Write>(encoder: &mut png::Encoder<W>, encoding: Encodin
 
 /// Encodes `image` as PNG bytes. Same image, same bytes.
 pub fn png(image: &Image) -> Vec<u8> {
+    png_with(image, choose(image))
+}
+
+/// Encodes `image` as PNG bytes with a given `encoding`, e.g. one chosen with
+/// [`choose_all`] for several images that must share a palette. An indexed
+/// `encoding` must contain every color of `image`.
+pub fn png_with(image: &Image, encoding: Encoding) -> Vec<u8> {
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
-    let data = configure(&mut encoder, choose(image));
+    let data = configure(&mut encoder, encoding);
     let mut writer = encoder
         .write_header()
         .expect("writing to a Vec cannot fail");

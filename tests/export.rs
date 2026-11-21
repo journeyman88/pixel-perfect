@@ -48,6 +48,7 @@ fn options(dir: &Path) -> RenderOptions {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     }
 }
@@ -208,7 +209,9 @@ fn implicit_exports_include_animations() {
         ("/timelines/walk", true),
         ("/scenes/night", true),
     ] {
-        let path = dir.path().join(&manifest.entry(pointer).unwrap().path);
+        let path = dir
+            .path()
+            .join(manifest.entry(pointer).unwrap().path.as_ref().unwrap());
         let bytes = std::fs::read(path).unwrap();
         let has_actl = images::chunks(&bytes).iter().any(|c| c == "acTL");
         assert_eq!(has_actl, animated, "{pointer}");
@@ -624,7 +627,12 @@ fn safe_build_names_by_hash() {
         "{hashed:?}"
     );
     assert_eq!(
-        manifest.entry("/sprites/ui/button").unwrap().path,
+        manifest
+            .entry("/sprites/ui/button")
+            .unwrap()
+            .path
+            .as_deref()
+            .unwrap(),
         format!("sprites/{}.png", export::id_hash("ui/button"))
     );
 }
@@ -663,7 +671,7 @@ fn manifest_content() {
     assert_eq!(
         manifest,
         json!({
-            "options": { "format": "png", "scale": 2, "safeBuild": false },
+            "options": { "format": "png", "scale": 2, "safeBuild": false, "singleFrames": false },
             "files": [
                 { "id": "/sprites/hero", "kind": "static", "path": "sprites/hero.png", "width": 6, "height": 4 }
             ]
@@ -685,7 +693,12 @@ fn manifest_in_safe_build() {
     let manifest = export::manifest(&plan, &opts);
     assert!(manifest.options.safe_build);
     assert_eq!(
-        manifest.entry("/sprites/hero").unwrap().path,
+        manifest
+            .entry("/sprites/hero")
+            .unwrap()
+            .path
+            .as_deref()
+            .unwrap(),
         "sprites/8737b11b474b218b.png"
     );
 }
@@ -806,7 +819,7 @@ fn webp_paths_and_manifest() {
         let entry = manifest
             .files
             .iter()
-            .find(|e| &e.path == file)
+            .find(|e| e.path.as_deref() == Some(file.as_str()))
             .expect("listed in the manifest");
         match entry.frame_count {
             Some(frames) => {
@@ -943,6 +956,7 @@ fn render_sequence(
         format,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, manifest) = export::render(&ws, &options).unwrap();
@@ -958,7 +972,7 @@ fn sequence_is_written_as_apng_with_the_scene_size() {
     assert_eq!(images::header(&png).1, 4);
     let entry = manifest.entry("/sequences/drift").unwrap();
     assert_eq!(
-        (entry.path.as_str(), entry.width, entry.height),
+        (entry.path.as_deref().unwrap(), entry.width, entry.height),
         ("sequences/drift.png", 8, 4)
     );
     assert!(entry.frame_count.is_some_and(|n| n > 1));
@@ -981,7 +995,12 @@ fn sequence_is_written_as_animated_webp() {
         .collect();
     assert_eq!(&names[..2], ["VP8X", "ANIM"]);
     assert_eq!(
-        manifest.entry("/sequences/drift").unwrap().path,
+        manifest
+            .entry("/sequences/drift")
+            .unwrap()
+            .path
+            .as_deref()
+            .unwrap(),
         "sequences/drift.webp"
     );
 }
@@ -1020,4 +1039,267 @@ fn longer_loop_prints_a_notice() {
         manifest.entry("/sequences/drift").unwrap().loop_seconds,
         Some(export::Fraction { num: 5, den: 2 })
     );
+}
+
+// Single frames (--single-frames)
+
+/// Flipbook `spin` (8x8, `fps` 12, durations 2, 2, 1, 1, four solid colors),
+/// sprite `a` and the scene-level nested rates whose APNG delays overflow.
+fn spin_sheet() -> ResolvedWorksheet {
+    let sprites: Vec<Value> = ["a", "b", "c", "d"]
+        .iter()
+        .map(|c| json!({ "id": c, "_palette": "p", "lines": vec![c.repeat(8); 8] }))
+        .collect();
+    common::load(json!({
+        "palettes": [{ "id": "p", "colors": [
+            { "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] },
+            { "char": "c", "rgba": [3, 0, 0] }, { "char": "d", "rgba": [4, 0, 0] }
+        ] }],
+        "sprites": sprites,
+        "flipbooks": [{ "id": "spin", "width": 8, "height": 8, "fps": 12, "frames": [
+            { "_sprite": "a", "coordinates": [0, 0], "duration": 2 },
+            { "_sprite": "b", "coordinates": [0, 0], "duration": 2 },
+            { "_sprite": "c", "coordinates": [0, 0], "duration": 1 },
+            { "_sprite": "d", "coordinates": [0, 0], "duration": 1 }
+        ] }],
+        "exports": ["/flipbooks/spin", "/sprites/a"]
+    }))
+}
+
+fn single_frames(dir: &Path) -> RenderOptions {
+    RenderOptions {
+        single_frames: true,
+        ..options(dir)
+    }
+}
+
+#[test]
+fn single_frames_plan_a_directory_per_animation() {
+    let ws = spin_sheet();
+    let plan = export::plan(&ws, &single_frames(Path::new("out"))).unwrap();
+    let paths: Vec<(&str, export::EntryKind)> = plan
+        .outputs
+        .iter()
+        .map(|o| (o.path.as_str(), o.kind))
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            ("flipbooks/spin", export::EntryKind::FrameCollection),
+            ("sprites/a.png", export::EntryKind::Static)
+        ]
+    );
+    let safe = RenderOptions {
+        safe_build: true,
+        ..single_frames(Path::new("out"))
+    };
+    let plan = export::plan(&ws, &safe).unwrap();
+    assert_eq!(
+        plan.outputs[0].path,
+        format!("flipbooks/{}", export::id_hash("spin"))
+    );
+}
+
+#[test]
+fn single_frames_skip_the_apng_delay_check() {
+    // Nested coprime rates (see tests/animate.rs): some frame lasts a
+    // fraction whose denominator no APNG delay can hold.
+    let sprites: Vec<Value> = ["a", "b", "c", "d"]
+        .iter()
+        .map(|c| json!({ "id": c, "_palette": "p", "lines": [c] }))
+        .collect();
+    let ws = common::load(json!({
+        "palettes": [{ "id": "p", "colors": [
+            { "char": "a", "rgba": [1, 0, 0] }, { "char": "b", "rgba": [2, 0, 0] },
+            { "char": "c", "rgba": [3, 0, 0] }, { "char": "d", "rgba": [4, 0, 0] }
+        ] }],
+        "sprites": sprites,
+        "flipbooks": [
+            { "id": "f89", "width": 1, "height": 1, "fps": 89, "frames": [
+                { "_sprite": "a", "coordinates": [0, 0], "duration": 1 },
+                { "_sprite": "b", "coordinates": [0, 0], "duration": 1 } ] },
+            { "id": "f83", "width": 1, "height": 1, "fps": 83, "frames": [
+                { "_sprite": "c", "coordinates": [0, 0], "duration": 1 },
+                { "_sprite": "d", "coordinates": [0, 0], "duration": 1 } ] }
+        ],
+        "panels": [
+            { "id": "t", "width": 1, "height": 1, "elements": [{ "id": "e", "_flipbook": "f89", "coordinates": [0, 0] }] },
+            { "id": "p", "width": 1, "height": 1, "elements": [{ "_flipbook": "f83", "coordinates": [0, 0] }] }
+        ],
+        "timelines": [{ "id": "tl", "_panel": "t", "fps": 97, "duration": 97,
+            "transitions": [{ "kind": "seekFlipbook", "_element": "e", "at": 1 }] }],
+        "scenes": [{ "id": "s", "width": 1, "height": 1, "layers": [
+            { "_timeline": "tl", "coordinates": [0, 0] }, { "_panel": "p", "coordinates": [0, 0] }
+        ] }],
+        "exports": ["/scenes/s"]
+    }));
+    let errors = export::plan(&ws, &options(Path::new("out"))).unwrap_err();
+    assert_error(&errors, "/scenes/0", "APNG cannot store exactly");
+    assert!(export::plan(&ws, &single_frames(Path::new("out"))).is_ok());
+}
+
+#[test]
+fn frame_collection_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    export::render(&spin_sheet(), &single_frames(dir.path())).unwrap();
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["options"]["singleFrames"], true);
+    let frame = |i: usize, den: u64| json!({ "index": i, "path": format!("flipbooks/spin/{i:04}.png"), "duration": { "num": 1, "den": den } });
+    assert_eq!(
+        manifest["files"][0],
+        json!({
+            "id": "/flipbooks/spin", "kind": "frameCollection", "width": 8, "height": 8,
+            "frames": [frame(0, 6), frame(1, 6), frame(2, 12), frame(3, 12)],
+            "loop": { "num": 1, "den": 2 }
+        })
+    );
+    assert_eq!(manifest["files"][1]["path"], "sprites/a.png");
+    common::assert_valid_manifest(&manifest);
+    assert_eq!(
+        files(dir.path()),
+        [
+            "flipbooks/spin/0000.png",
+            "flipbooks/spin/0001.png",
+            "flipbooks/spin/0002.png",
+            "flipbooks/spin/0003.png",
+            "manifest.json",
+            "sprites/a.png"
+        ]
+    );
+}
+
+#[test]
+fn single_png_frames_are_still_images_of_the_animation() {
+    let ws = spin_sheet();
+    let dir = tempfile::tempdir().unwrap();
+    let opts = RenderOptions {
+        scale: 2,
+        ..single_frames(dir.path())
+    };
+    let (_, manifest) = export::render(&ws, &opts).unwrap();
+    let expected = pixel_perfect::animate::Animation::new(&ws, "flipbooks", "spin")
+        .unwrap()
+        .exact_frames();
+    let frames = manifest
+        .entry("/flipbooks/spin")
+        .unwrap()
+        .frames
+        .clone()
+        .unwrap();
+    assert_eq!(frames.len(), expected.len());
+    // One color space: the 4 colors of all frames in one palette, in playback
+    // order, shared by every frame.
+    let shared_plte: Vec<u8> = (1..=4).flat_map(|r| [r, 0, 0]).collect();
+    for (frame, (image, _)) in frames.iter().zip(&expected) {
+        let png = std::fs::read(dir.path().join(&frame.path)).unwrap();
+        assert!(
+            !images::chunks(&png).iter().any(|c| c == "acTL"),
+            "{}",
+            frame.path
+        );
+        let (_, _, bit_depth, color_type) = images::header(&png);
+        assert_eq!(
+            (color_type, bit_depth),
+            (3, 2),
+            "{}: indexed, 2 bits",
+            frame.path
+        );
+        assert_eq!(
+            images::chunk_data(&png, "PLTE"),
+            Some(shared_plte.as_slice()),
+            "{}",
+            frame.path
+        );
+        let (w, h, pixels) = images::decode(&png);
+        assert_eq!((w, h), (16, 16));
+        assert!(pixels == image.upscale(2).pixels(), "{}", frame.path);
+    }
+}
+
+#[test]
+fn single_webp_frames_are_still_images_of_the_animation() {
+    let ws = spin_sheet();
+    let dir = tempfile::tempdir().unwrap();
+    let opts = RenderOptions {
+        single_frames: true,
+        ..webp_options(dir.path())
+    };
+    let (_, manifest) = export::render(&ws, &opts).unwrap();
+    let expected = pixel_perfect::animate::Animation::new(&ws, "flipbooks", "spin")
+        .unwrap()
+        .exact_frames();
+    let frames = manifest
+        .entry("/flipbooks/spin")
+        .unwrap()
+        .frames
+        .clone()
+        .unwrap();
+    assert_eq!(frames.len(), expected.len());
+    for (frame, (image, _)) in frames.iter().zip(&expected) {
+        assert!(frame.path.ends_with(".webp"), "{}", frame.path);
+        let webp = std::fs::read(dir.path().join(&frame.path)).unwrap();
+        let fourccs: Vec<String> = images::webp_chunks(&webp)
+            .into_iter()
+            .map(|c| c.fourcc)
+            .collect();
+        assert!(!fourccs.iter().any(|c| c == "ANIM"), "{}", frame.path);
+        let (_, _, pixels) = images::decode_webp(&webp);
+        assert!(pixels == image.pixels(), "{}", frame.path);
+    }
+}
+
+#[test]
+fn frame_names_are_zero_padded_to_the_last_index() {
+    assert_eq!(export::frame_name(0, 4), "0000");
+    assert_eq!(export::frame_name(3, 4), "0003");
+    assert_eq!(export::frame_name(9999, 10000), "9999");
+    assert_eq!(export::frame_name(0, 10001), "00000");
+    assert_eq!(export::frame_name(10000, 10001), "10000");
+    assert_eq!(export::frame_name(12344, 12345), "12344");
+    assert_eq!(export::frame_name(0, 1), "0000");
+}
+
+#[test]
+fn single_png_frames_are_all_rgba_when_their_colors_do_not_fit_one_palette() {
+    // Two 16x9 frames of 144 colors each, all different: each would fit a
+    // palette on its own, but together they have 288 colors.
+    let chars: Vec<char> = (0x4E00..0x4E00 + 288).filter_map(char::from_u32).collect();
+    let colors: Vec<Value> = chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| json!({ "char": c.to_string(), "rgba": [i % 256, i / 256, 7] }))
+        .collect();
+    let lines = |half: usize| -> Vec<String> {
+        chars[half * 144..(half + 1) * 144]
+            .chunks(16)
+            .map(|row| row.iter().collect())
+            .collect()
+    };
+    let ws = common::load(json!({
+        "palettes": [{ "id": "p", "colors": colors }],
+        "sprites": [
+            { "id": "first", "_palette": "p", "lines": lines(0) },
+            { "id": "second", "_palette": "p", "lines": lines(1) }
+        ],
+        "flipbooks": [{ "id": "rich", "width": 16, "height": 9, "fps": 1, "frames": [
+            { "_sprite": "first", "coordinates": [0, 0], "duration": 1 },
+            { "_sprite": "second", "coordinates": [0, 0], "duration": 1 }
+        ] }],
+        "exports": ["/flipbooks/rich"]
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let (_, manifest) = export::render(&ws, &single_frames(dir.path())).unwrap();
+    let frames = manifest
+        .entry("/flipbooks/rich")
+        .unwrap()
+        .frames
+        .clone()
+        .unwrap();
+    assert_eq!(frames.len(), 2);
+    for frame in &frames {
+        let png = std::fs::read(dir.path().join(&frame.path)).unwrap();
+        assert_eq!(images::header(&png).3, 6, "{}: RGBA", frame.path);
+    }
 }

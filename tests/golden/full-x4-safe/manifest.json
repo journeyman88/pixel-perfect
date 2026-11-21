@@ -2,7 +2,8 @@
   "options": {
     "format": "png",
     "scale": 4,
-    "safeBuild": true
+    "safeBuild": true,
+    "singleFrames": false
   },
   "files": [
     {

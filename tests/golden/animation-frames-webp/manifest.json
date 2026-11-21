@@ -1,0 +1,466 @@
+{
+  "options": {
+    "format": "webp",
+    "scale": 1,
+    "safeBuild": false,
+    "singleFrames": true
+  },
+  "files": [
+    {
+      "id": "/flipbooks/sparkle",
+      "kind": "frameCollection",
+      "width": 1,
+      "height": 1,
+      "frames": [
+        {
+          "index": 0,
+          "path": "flipbooks/sparkle/0000.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 1,
+          "path": "flipbooks/sparkle/0001.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 2,
+          "path": "flipbooks/sparkle/0002.webp",
+          "duration": {
+            "num": 1,
+            "den": 4
+          }
+        }
+      ],
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
+    {
+      "id": "/panels/dance-floor",
+      "kind": "static",
+      "path": "panels/dance-floor.webp",
+      "width": 8,
+      "height": 4
+    },
+    {
+      "id": "/panels/lamp",
+      "kind": "static",
+      "path": "panels/lamp.webp",
+      "width": 4,
+      "height": 4
+    },
+    {
+      "id": "/scenes/show",
+      "kind": "frameCollection",
+      "width": 12,
+      "height": 4,
+      "frames": [
+        {
+          "index": 0,
+          "path": "scenes/show/0000.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 1,
+          "path": "scenes/show/0001.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 2,
+          "path": "scenes/show/0002.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 3,
+          "path": "scenes/show/0003.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 4,
+          "path": "scenes/show/0004.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 5,
+          "path": "scenes/show/0005.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 6,
+          "path": "scenes/show/0006.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 7,
+          "path": "scenes/show/0007.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 8,
+          "path": "scenes/show/0008.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 9,
+          "path": "scenes/show/0009.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 10,
+          "path": "scenes/show/0010.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 11,
+          "path": "scenes/show/0011.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 12,
+          "path": "scenes/show/0012.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 13,
+          "path": "scenes/show/0013.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 14,
+          "path": "scenes/show/0014.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 15,
+          "path": "scenes/show/0015.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 16,
+          "path": "scenes/show/0016.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 17,
+          "path": "scenes/show/0017.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 18,
+          "path": "scenes/show/0018.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 19,
+          "path": "scenes/show/0019.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        }
+      ],
+      "loop": {
+        "num": 2,
+        "den": 1
+      }
+    },
+    {
+      "id": "/sprites/floor",
+      "kind": "static",
+      "path": "sprites/floor.webp",
+      "width": 8,
+      "height": 4
+    },
+    {
+      "id": "/sprites/hero",
+      "kind": "static",
+      "path": "sprites/hero.webp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "id": "/sprites/lamp-off",
+      "kind": "static",
+      "path": "sprites/lamp-off.webp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "id": "/sprites/lamp-on",
+      "kind": "static",
+      "path": "sprites/lamp-on.webp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "id": "/sprites/spark-a",
+      "kind": "static",
+      "path": "sprites/spark-a.webp",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "/sprites/spark-b",
+      "kind": "static",
+      "path": "sprites/spark-b.webp",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "/timelines/dance",
+      "kind": "frameCollection",
+      "width": 8,
+      "height": 4,
+      "frames": [
+        {
+          "index": 0,
+          "path": "timelines/dance/0000.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 1,
+          "path": "timelines/dance/0001.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 2,
+          "path": "timelines/dance/0002.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 3,
+          "path": "timelines/dance/0003.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 4,
+          "path": "timelines/dance/0004.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 5,
+          "path": "timelines/dance/0005.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 6,
+          "path": "timelines/dance/0006.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 7,
+          "path": "timelines/dance/0007.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 8,
+          "path": "timelines/dance/0008.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 9,
+          "path": "timelines/dance/0009.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 10,
+          "path": "timelines/dance/0010.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        },
+        {
+          "index": 11,
+          "path": "timelines/dance/0011.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 12,
+          "path": "timelines/dance/0012.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 13,
+          "path": "timelines/dance/0013.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 14,
+          "path": "timelines/dance/0014.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 15,
+          "path": "timelines/dance/0015.webp",
+          "duration": {
+            "num": 1,
+            "den": 6
+          }
+        },
+        {
+          "index": 16,
+          "path": "timelines/dance/0016.webp",
+          "duration": {
+            "num": 1,
+            "den": 8
+          }
+        },
+        {
+          "index": 17,
+          "path": "timelines/dance/0017.webp",
+          "duration": {
+            "num": 1,
+            "den": 24
+          }
+        },
+        {
+          "index": 18,
+          "path": "timelines/dance/0018.webp",
+          "duration": {
+            "num": 1,
+            "den": 12
+          }
+        }
+      ],
+      "loop": {
+        "num": 2,
+        "den": 1
+      }
+    },
+    {
+      "id": "/timelines/pulse",
+      "kind": "frameCollection",
+      "width": 4,
+      "height": 4,
+      "frames": [
+        {
+          "index": 0,
+          "path": "timelines/pulse/0000.webp",
+          "duration": {
+            "num": 1,
+            "den": 2
+          }
+        },
+        {
+          "index": 1,
+          "path": "timelines/pulse/0001.webp",
+          "duration": {
+            "num": 1,
+            "den": 2
+          }
+        }
+      ],
+      "loop": {
+        "num": 1,
+        "den": 1
+      }
+    }
+  ]
+}

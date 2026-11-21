@@ -58,6 +58,7 @@ fn options(scale: u32, max_image_size: Option<u64>) -> RenderOptions {
         format: OutputFormat::Png,
         scale,
         safe_build: false,
+        single_frames: false,
         max_image_size,
     }
 }
@@ -327,4 +328,14 @@ fn animation_limit_applies_after_scale() {
     assert!(export::plan(&ws, &options(16, Some(1 << 30))).is_ok());
     let errors = export::plan(&ws, &options(16, Some(512 << 20))).unwrap_err();
     assert_error(&errors, "/timelines/0", "more than 512 frames");
+}
+
+#[test]
+fn long_animation_exceeds_the_limit_with_single_frames() {
+    let opts = RenderOptions {
+        single_frames: true,
+        ..options(1, DEFAULT)
+    };
+    let errors = export::plan(&long_animation(), &opts).unwrap_err();
+    assert_error(&errors, "/timelines/0", "--max-image-size");
 }

@@ -557,3 +557,34 @@ fn render_prints_the_sequence_loop_notice() {
         .code(0)
         .stderr("");
 }
+
+#[test]
+fn render_single_frames() {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = worksheet_file(
+        dir.path(),
+        r#"{
+    "palettes": [{ "id": "p", "colors": [{ "char": "r", "rgba": [255, 0, 0] }, { "char": "g", "rgba": [0, 255, 0] }] }],
+    "sprites": [{ "id": "a", "_palette": "p", "lines": ["r"] }, { "id": "b", "_palette": "p", "lines": ["g"] }],
+    "flipbooks": [{ "id": "blink", "width": 1, "height": 1, "fps": 2, "frames": [
+        { "_sprite": "a", "coordinates": [0, 0], "duration": 1 },
+        { "_sprite": "b", "coordinates": [0, 0], "duration": 1 }
+    ] }]
+}"#,
+    );
+    let out = dir.path().join("out");
+    cli()
+        .arg("render")
+        .arg(&sheet)
+        .arg("-o")
+        .arg(&out)
+        .arg("--single-frames")
+        .assert()
+        .code(0);
+    assert!(out.join("flipbooks/blink/0000.png").is_file());
+    assert!(out.join("flipbooks/blink/0001.png").is_file());
+    assert!(!out.join("flipbooks/blink.png").exists());
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["options"]["singleFrames"], true, "{manifest}");
+}

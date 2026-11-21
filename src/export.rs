@@ -141,19 +141,23 @@ pub struct RenderOptions {
     pub scale: u32,
     /// Name files by the hash of their id instead of the id.
     pub safe_build: bool,
+    /// Write animated resources as one still image per frame.
+    pub single_frames: bool,
     /// Largest image, in bytes of RGBA8, the engine may build; `None` for no
     /// limit. See [`DEFAULT_MAX_IMAGE_SIZE`].
     pub max_image_size: Option<u64>,
 }
 
-/// One file to produce.
+/// One resource to write: a file, or a directory of frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedOutput {
     /// Export pointer, e.g. `/sprites/hero`.
     pub pointer: String,
     pub collection: &'static str,
     pub id: String,
-    /// Path relative to the output path, with `/` separators.
+    pub kind: EntryKind,
+    /// Path relative to the output path, with `/` separators: the file, or
+    /// for a frame collection the directory of its frames (no extension).
     pub path: String,
     /// Size after scaling.
     pub width: u32,
@@ -204,9 +208,10 @@ pub struct ManifestOptions {
     pub format: &'static str,
     pub scale: u32,
     pub safe_build: bool,
+    pub single_frames: bool,
 }
 
-/// How a resource was written.
+/// How a resource is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EntryKind {
@@ -214,6 +219,8 @@ pub enum EntryKind {
     Static,
     /// A single animated image.
     Animation,
+    /// One still image per frame (`--single-frames`).
+    FrameCollection,
 }
 
 /// Fields are serialized in declaration order.
@@ -223,35 +230,54 @@ pub struct ManifestEntry {
     /// Export pointer, e.g. `/sprites/hero`.
     pub id: String,
     pub kind: EntryKind,
-    pub path: String,
+    /// The file; `None` for a frame collection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     pub width: u32,
     pub height: u32,
-    /// Frames written, for animated resources.
+    /// Frames written, for an animation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_count: Option<usize>,
+    /// The frame files in playback order, for a frame collection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frames: Option<Vec<ManifestFrame>>,
     /// Loop length in seconds, for animated resources.
     #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
     pub loop_seconds: Option<Fraction>,
 }
 
+/// One frame of a frame collection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ManifestFrame {
+    pub index: usize,
+    pub path: String,
+    /// How long the frame is shown, in seconds.
+    pub duration: Fraction,
+}
+
 impl ManifestEntry {
-    /// The entry of `output`; animated exactly when it has a loop length.
-    /// `frame_count` is filled in when the animation is encoded.
+    /// The entry of `output`. `frame_count` and `frames` are filled in when
+    /// the animation is encoded.
     fn new(output: &PlannedOutput) -> Self {
         Self {
             id: output.pointer.clone(),
-            kind: if output.loop_seconds.is_some() {
-                EntryKind::Animation
-            } else {
-                EntryKind::Static
-            },
-            path: output.path.clone(),
+            kind: output.kind,
+            path: (output.kind != EntryKind::FrameCollection).then(|| output.path.clone()),
             width: output.width,
             height: output.height,
             frame_count: None,
+            frames: None,
             loop_seconds: output.loop_seconds,
         }
     }
+}
+
+/// File stem of frame `index` in a collection of `count` frames: zero-padded
+/// to 4 digits, or to the width of the last index when that is more, so names
+/// sort in playback order.
+pub fn frame_name(index: usize, count: usize) -> String {
+    let width = count.saturating_sub(1).to_string().len().max(4);
+    format!("{index:0width$}")
 }
 
 /// Why a render failed.
@@ -539,7 +565,10 @@ fn plan_animation(
             )
         }
     })?;
-    if options.format == OutputFormat::Webp {
+    // With --single-frames no animated container is written, so its timing
+    // limits do not apply.
+    if options.single_frames {
+    } else if options.format == OutputFormat::Webp {
         let bound = animation.ms_frame_bound(&ticks, webp::MAX_DURATION_MS);
         if bound > MAX_FRAMES as u128 {
             return Err(format!(
@@ -686,10 +715,19 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
         } else {
             None
         };
+        let kind = match (loop_seconds.is_some(), options.single_frames) {
+            (false, _) => EntryKind::Static,
+            (true, false) => EntryKind::Animation,
+            (true, true) => EntryKind::FrameCollection,
+        };
         outputs.push(PlannedOutput {
             pointer: format!("/{collection}/{id}"),
             collection,
-            path: format!("{collection}/{name}.{ext}"),
+            kind,
+            path: match kind {
+                EntryKind::FrameCollection => format!("{collection}/{name}"),
+                _ => format!("{collection}/{name}.{ext}"),
+            },
             id,
             width: sw as u32,
             height: sh as u32,
@@ -803,9 +841,44 @@ pub fn manifest(plan: &Plan, options: &RenderOptions) -> Manifest {
             format: options.format.extension(),
             scale: options.scale,
             safe_build: options.safe_build,
+            single_frames: options.single_frames,
         },
         files,
     }
+}
+
+/// Renders a frame collection and writes one still image per frame under
+/// its directory; returns the manifest frames in playback order.
+fn write_frames(
+    ws: &ResolvedWorksheet,
+    output: &PlannedOutput,
+    options: &RenderOptions,
+) -> Result<Vec<ManifestFrame>, RenderError> {
+    let animation = Animation::new(ws, output.collection, &output.id)
+        .expect("the export plan checked the time model");
+    let frames = animation.exact_frames();
+    // One color space for the whole collection: PNG frames share the encoding
+    // (and palette) chosen from all frames together, as APNG does. Upscaling
+    // adds no colors, so the unscaled frames are enough.
+    let shared = encode::choose_all(frames.iter().map(|(image, _)| image));
+    let ext = options.format.extension();
+    let mut out = Vec::with_capacity(frames.len());
+    for (index, (image, ticks)) in frames.iter().enumerate() {
+        let image = image.upscale(options.scale);
+        let bytes = match options.format {
+            OutputFormat::Png => encode::png_with(&image, shared.clone()),
+            OutputFormat::Webp => webp::still(&image),
+        };
+        let path = format!("{}/{}.{ext}", output.path, frame_name(index, frames.len()));
+        write_file(&options.output_path.join(&path), &bytes)?;
+        let (num, den) = time::reduced(*ticks, animation.clock);
+        out.push(ManifestFrame {
+            index,
+            path,
+            duration: Fraction { num, den },
+        });
+    }
+    Ok(out)
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RenderError> {
@@ -827,24 +900,28 @@ pub fn write(
 ) -> Result<Manifest, RenderError> {
     let mut manifest = manifest(plan, options);
     for output in &plan.outputs {
-        let bytes = if output.loop_seconds.is_some() {
-            let (bytes, frames) = animation_bytes(ws, output, options.scale, options.format)
-                .map_err(|source| RenderError::Encode {
-                    pointer: output.pointer.clone(),
-                    source,
-                })?;
-            if let Ok(i) = manifest
-                .files
-                .binary_search_by(|e| e.id.as_str().cmp(&output.pointer))
-            {
-                manifest.files[i].frame_count = Some(frames);
+        let entry = manifest
+            .files
+            .binary_search_by(|e| e.id.as_str().cmp(&output.pointer))
+            .expect("every output has a manifest entry");
+        let bytes = match output.kind {
+            EntryKind::FrameCollection => {
+                manifest.files[entry].frames = Some(write_frames(ws, output, options)?);
+                continue;
             }
-            bytes
-        } else {
-            match options.format {
+            EntryKind::Animation => {
+                let (bytes, frames) = animation_bytes(ws, output, options.scale, options.format)
+                    .map_err(|source| RenderError::Encode {
+                        pointer: output.pointer.clone(),
+                        source,
+                    })?;
+                manifest.files[entry].frame_count = Some(frames);
+                bytes
+            }
+            EntryKind::Static => match options.format {
                 OutputFormat::Png => encode::png(&image(ws, output, options.scale)),
                 OutputFormat::Webp => webp::still(&image(ws, output, options.scale)),
-            }
+            },
         };
         write_file(&options.output_path.join(&output.path), &bytes)?;
     }

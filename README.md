@@ -51,6 +51,7 @@ pixel-perfect render hero.json --output-path out --scale 4
 | `--format <format>` | `png` | Output format: `png` or `webp` (see [WebP](#webp)). |
 | `--scale <N>` | `1` | Integer upscale, 1–64: every pixel becomes an N×N block. |
 | `--safe-build` | off | Name files by a hash of their id (see below). |
+| `--single-frames` | off | Write animations as one still image per frame (see [Single frames](#single-frames)). |
 | `--max-image-size <SIZE>` | `1GiB` | Largest image the engine may build (see below). |
 
 Files are written to `<output-path>/<collection>/<id>.<format>`, for example
@@ -71,7 +72,7 @@ length in seconds as an exact fraction:
 
 ```json
 {
-  "options": { "format": "png", "scale": 4, "safeBuild": false },
+  "options": { "format": "png", "scale": 4, "safeBuild": false, "singleFrames": false },
   "files": [
     {
       "id": "/flipbooks/beat", "kind": "animation", "path": "flipbooks/beat.png",
@@ -94,6 +95,46 @@ against it. To stay compatible with later versions, a consumer must:
 
 New command-line options are added under `options`, and new output formats
 appear as new `format` values. Neither change needs a new schema version.
+
+#### Single frames
+
+Many engines and packing tools cannot read APNG or animated WebP. With
+`--single-frames`, every animation is written instead as one still image per
+frame, in the chosen `--format`:
+
+```text
+out/flipbooks/beat/0000.png
+out/flipbooks/beat/0001.png
+```
+
+Each file is a full frame of the animation's canvas, not a difference from the
+previous frame. Consecutive identical frames are merged into one. All the
+frames of an animation share one color space, so that they can be imported
+together. As PNG, they are either all indexed, with the same palette, or all
+RGBA when the frames together have more than 256 colors. Names are the
+frame index, zero-padded to 4 digits, or to the width of the last index when an
+animation has more than 10000 frames, so that sorting the names gives playback
+order. With `--safe-build`, the directory is named by the hash of the id. Static
+resources are written as usual.
+
+In the manifest these entries have `kind` `frameCollection`. They list their
+`frames` in playback order, each with its exact `duration` in seconds, and the
+durations add up to `loop`:
+
+```json
+{
+  "id": "/flipbooks/beat", "kind": "frameCollection", "width": 28, "height": 24,
+  "frames": [
+    { "index": 0, "path": "flipbooks/beat/0000.png", "duration": { "num": 1, "den": 2 } },
+    { "index": 1, "path": "flipbooks/beat/0001.png", "duration": { "num": 1, "den": 2 } }
+  ],
+  "loop": { "num": 1, "den": 1 }
+}
+```
+
+Take the frames from the manifest, not from the directory listing. Files from
+earlier renders are never deleted, so if an animation is rendered again with
+fewer frames, the old extra frames stay on disk.
 
 Each image is stored as an **indexed PNG** (1, 2, 4 or 8 bits per pixel) when
 it has at most 256 distinct colors, and as **RGBA** otherwise. The count is

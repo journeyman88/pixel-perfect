@@ -15,7 +15,14 @@ use std::path::{Path, PathBuf};
 
 use pixel_perfect::export::{self, OutputFormat, RenderOptions};
 
-fn render_to(fixture: &str, dir: &Path, format: OutputFormat, scale: u32, safe_build: bool) {
+fn render_to(
+    fixture: &str,
+    dir: &Path,
+    format: OutputFormat,
+    scale: u32,
+    safe_build: bool,
+    single_frames: bool,
+) {
     let path = common::fixture(fixture);
     let text = std::fs::read_to_string(&path).unwrap();
     let input = pixel_perfect::Format::from_path(&path).unwrap();
@@ -27,6 +34,7 @@ fn render_to(fixture: &str, dir: &Path, format: OutputFormat, scale: u32, safe_b
         format,
         scale,
         safe_build,
+        single_frames,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     export::render(&ws, &options).unwrap();
@@ -69,16 +77,43 @@ fn check_format(
     safe_build: bool,
     expected_files: usize,
 ) {
+    check_options(
+        name,
+        fixture,
+        format,
+        scale,
+        safe_build,
+        false,
+        expected_files,
+    );
+}
+
+fn check_options(
+    name: &str,
+    fixture: &str,
+    format: OutputFormat,
+    scale: u32,
+    safe_build: bool,
+    single_frames: bool,
+    expected_files: usize,
+) {
     let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/golden")
         .join(name);
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         let _ = std::fs::remove_dir_all(&golden);
-        render_to(fixture, &golden, format, scale, safe_build);
+        render_to(fixture, &golden, format, scale, safe_build, single_frames);
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    render_to(fixture, dir.path(), format, scale, safe_build);
+    render_to(
+        fixture,
+        dir.path(),
+        format,
+        scale,
+        safe_build,
+        single_frames,
+    );
     let expected = tree(&golden);
     assert_eq!(tree(dir.path()), expected, "produced files");
     for relative in &expected {
@@ -175,6 +210,38 @@ fn sequence_fixture_webp() {
     );
 }
 
+// Single frames: animations become one still image per frame.
+
+/// manifest + 6 sprites + 2 static panels + the frames of flipbook `sparkle`,
+/// the 2 timelines and scene `show` (44 frames).
+const FRAMES_FILE_COUNT: usize = 53;
+
+#[test]
+fn animation_fixture_single_frames() {
+    check_options(
+        "animation-frames",
+        "valid/animation.json",
+        OutputFormat::Png,
+        1,
+        false,
+        true,
+        FRAMES_FILE_COUNT,
+    );
+}
+
+#[test]
+fn animation_fixture_single_frames_webp() {
+    check_options(
+        "animation-frames-webp",
+        "valid/animation.json",
+        OutputFormat::Webp,
+        1,
+        false,
+        true,
+        FRAMES_FILE_COUNT,
+    );
+}
+
 #[test]
 fn sequence_renders_are_byte_identical() {
     let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -184,6 +251,7 @@ fn sequence_renders_are_byte_identical() {
             dir.path(),
             OutputFormat::Png,
             2,
+            false,
             false,
         );
     }
@@ -209,7 +277,13 @@ fn webp_goldens_pass_webpinfo() {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     let mut checked = 0;
-    for name in ["full-webp", "scene-webp", "animation-webp", "sequence-webp"] {
+    for name in [
+        "full-webp",
+        "scene-webp",
+        "animation-webp",
+        "sequence-webp",
+        "animation-frames-webp",
+    ] {
         for relative in tree(&root.join(name)) {
             if relative.extension().is_none_or(|e| e != "webp") {
                 continue;
@@ -229,7 +303,9 @@ fn webp_goldens_pass_webpinfo() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 40);
+    // 40 in the four animated-container directories, 52 frames and stills in
+    // animation-frames-webp.
+    assert_eq!(checked, 40 + 52);
 }
 
 /// Every golden manifest is valid against `schema/manifest.schema.json`.
@@ -243,7 +319,7 @@ fn golden_manifests_match_the_schema() {
         common::assert_valid_manifest(&serde_json::from_str(&text).unwrap());
         checked += 1;
     }
-    assert_eq!(checked, 9, "one manifest per golden directory");
+    assert_eq!(checked, 11, "one manifest per golden directory");
 }
 
 /// Every golden APNG, decoded by compositing its frames as the APNG

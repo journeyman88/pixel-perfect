@@ -833,3 +833,78 @@ fn ms_frame_bound_counts_split_parts() {
     // Parts of at most 1 ms: one per millisecond of the loop.
     assert_eq!(a.ms_frame_bound(&ticks, 1), 2000);
 }
+
+// Exact frames (--single-frames)
+
+/// Frames of a resource as (rows joined by `/`, ticks), merged without the
+/// APNG delay cap.
+fn exact_frames(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Vec<(String, u64)> {
+    anim(ws, collection, id)
+        .exact_frames()
+        .iter()
+        .map(|(image, ticks)| (show(image).join("/"), *ticks))
+        .collect()
+}
+
+#[test]
+fn exact_frames_keep_the_flipbook_durations() {
+    let ws = sheet(json!({
+        "flipbooks": [flipbook("spin", 12, &[("a", 2), ("b", 2), ("c", 1), ("d", 1)])]
+    }));
+    assert_eq!(anim(&ws, "flipbooks", "spin").clock, 12);
+    assert_eq!(
+        exact_frames(&ws, "flipbooks", "spin"),
+        vec![f("A", 2), f("B", 2), f("C", 1), f("D", 1)]
+    );
+}
+
+#[test]
+fn exact_frames_merge_identical_frames() {
+    let ws = sheet(json!({
+        "flipbooks": [flipbook("fb", 10, &[("a", 1), ("a", 2), ("b", 1)])]
+    }));
+    assert_eq!(
+        exact_frames(&ws, "flipbooks", "fb"),
+        vec![f("A", 3), f("B", 1)]
+    );
+}
+
+#[test]
+fn exact_frames_merge_past_the_apng_delay_limit() {
+    // As in `nested_coprime_rates_can_overflow_the_denominator`, but the top
+    // layer (83 fps) is opaque and changes only once, at 1/83 s, so the image
+    // is D from then to the end of the loop. The hidden 89 fps flipbook,
+    // seeked at 1/97 s, still adds change ticks, and a merged frame from 1/83
+    // to one of them has a denominator over 65535: APNG merging stops there.
+    let ws = sheet(json!({
+        "flipbooks": [flipbook("f89", 89, &[("a", 1), ("b", 1)]), flipbook("f83", 83, &[("c", 1), ("d", 82)])],
+        "panels": [
+            { "id": "t", "width": 1, "height": 1, "elements": [{ "id": "e", "_flipbook": "f89", "coordinates": [0, 0] }] },
+            { "id": "p", "width": 1, "height": 1, "elements": [{ "_flipbook": "f83", "coordinates": [0, 0] }] }
+        ],
+        "timelines": [{ "id": "tl", "_panel": "t", "fps": 97, "duration": 97,
+            "transitions": [{ "kind": "seekFlipbook", "_element": "e", "at": 1 }] }],
+        "scenes": [{ "id": "s", "width": 1, "height": 1, "layers": [
+            { "_timeline": "tl", "coordinates": [0, 0] }, { "_panel": "p", "coordinates": [0, 0] }
+        ] }]
+    }));
+    let a = anim(&ws, "scenes", "s");
+    assert_eq!(a.clock, 716_539);
+    assert!(
+        a.frames().len() > 2,
+        "APNG merging stops at the delay limit"
+    );
+    let step = a.clock / 83;
+    assert_eq!(
+        exact_frames(&ws, "scenes", "s"),
+        vec![f("C", step), f("D", a.loop_len - step)]
+    );
+}
+
+#[test]
+fn exact_durations_sum_to_the_loop() {
+    let ws = coprime_panel();
+    let a = anim(&ws, "panels", "x");
+    let total: u64 = a.exact_frames().iter().map(|(_, t)| t).sum();
+    assert_eq!(total, a.loop_len);
+}

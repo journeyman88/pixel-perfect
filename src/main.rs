@@ -41,6 +41,9 @@ enum Command {
         /// Name files by the BLAKE2b-64 hash of their id (any id works).
         #[arg(long)]
         safe_build: bool,
+        /// Write animations as one still image per frame, under <collection>/<name>/.
+        #[arg(long)]
+        single_frames: bool,
         /// Largest image the engine may build, as RGBA8 bytes: a number with an
         /// optional KiB/MiB/GiB/TiB suffix, or "none". A guard against
         /// mistakes, not a memory budget.
@@ -121,6 +124,7 @@ fn main() -> ExitCode {
             format,
             scale,
             safe_build,
+            single_frames,
             max_image_size,
         } => {
             let options = RenderOptions {
@@ -131,6 +135,7 @@ fn main() -> ExitCode {
                 },
                 scale,
                 safe_build,
+                single_frames,
                 max_image_size: max_image_size.0,
             };
             render(&worksheet, &options)

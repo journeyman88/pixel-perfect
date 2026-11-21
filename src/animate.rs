@@ -813,6 +813,15 @@ impl<'a> Animation<'a> {
         })
     }
 
+    /// The distinct frames of one loop with their exact durations in ticks:
+    /// consecutive identical frames are always merged, with no bound on the
+    /// merged duration. The durations add up to [`Self::loop_len`].
+    pub fn exact_frames(&self) -> Vec<(Image, u64)> {
+        let ticks = self.all_change_ticks();
+        let lengths = segments(&ticks, self.loop_len).map(|(_, len)| len);
+        self.merged(&ticks, lengths, |a, b| Some(a + b))
+    }
+
     /// The frames of one loop with their WebP durations in milliseconds (see
     /// [`time::ms_durations`]): segments of 0 ms are skipped without being
     /// rendered, then consecutive identical frames are merged. Durations may

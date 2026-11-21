@@ -38,6 +38,7 @@ fn sprites_example_covers_every_encoding() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, _) = render(&ws, &options);
@@ -68,6 +69,7 @@ fn composition_example_renders_its_scene() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, _) = render(&ws, &options);
@@ -95,6 +97,7 @@ fn masquerade_example_renders_its_scene() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, _) = render(&ws, &options);
@@ -113,6 +116,7 @@ fn campfire_example_renders_its_animations() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, manifest) = render(&ws, &options);
@@ -128,7 +132,7 @@ fn campfire_example_renders_its_animations() {
         assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
         let fraction = entry.loop_seconds.expect("animated");
         assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
-        let png = std::fs::read(dir.path().join(&entry.path)).unwrap();
+        let png = std::fs::read(dir.path().join(entry.path.as_ref().unwrap())).unwrap();
         assert!(
             images::chunks(&png).iter().any(|c| c == "acTL"),
             "{pointer} is an APNG"
@@ -145,6 +149,7 @@ fn animation_example_renders_its_animations() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, manifest) = render(&ws, &options);
@@ -161,7 +166,7 @@ fn animation_example_renders_its_animations() {
         assert_eq!((entry.width, entry.height), (width, height), "{pointer}");
         let fraction = entry.loop_seconds.expect("animated");
         assert_eq!((fraction.num, fraction.den), seconds, "{pointer}");
-        let png = std::fs::read(dir.path().join(&entry.path)).unwrap();
+        let png = std::fs::read(dir.path().join(entry.path.as_ref().unwrap())).unwrap();
         assert!(
             images::chunks(&png).iter().any(|c| c == "acTL"),
             "{pointer} is an APNG"
@@ -195,6 +200,7 @@ fn parallax_example_renders_its_sequence() {
         format: OutputFormat::Png,
         scale: 1,
         safe_build: false,
+        single_frames: false,
         max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
     };
     let (plan, manifest) = render(&ws, &options);
@@ -202,11 +208,52 @@ fn parallax_example_renders_its_sequence() {
     let dusk = manifest.entry("/sequences/dusk").unwrap();
     assert_eq!((dusk.width, dusk.height), (64, 32));
     assert_eq!(dusk.loop_seconds, Some(export::Fraction { num: 4, den: 1 }));
-    let png = std::fs::read(dir.path().join(&dusk.path)).unwrap();
+    let png = std::fs::read(dir.path().join(dusk.path.as_ref().unwrap())).unwrap();
     assert!(images::chunks(&png).iter().any(|c| c == "acTL"));
     let valley = manifest.entry("/scenes/valley").unwrap();
     assert_eq!(
         valley.loop_seconds,
         Some(export::Fraction { num: 1, den: 2 })
     );
+}
+
+#[test]
+fn campfire_example_renders_single_frames() {
+    let ws = pixel_perfect::load_file(&example("campfire.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        single_frames: true,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (_, manifest) = render(&ws, &options);
+    for pointer in ["/flipbooks/flames", "/timelines/fire", "/scenes/campfire"] {
+        let entry = manifest.entry(pointer).unwrap();
+        assert_eq!(entry.kind, export::EntryKind::FrameCollection, "{pointer}");
+        let frames = entry.frames.as_ref().unwrap();
+        let mut total = export::Fraction { num: 0, den: 1 };
+        for (i, frame) in frames.iter().enumerate() {
+            assert_eq!(frame.index, i);
+            let png = std::fs::read(dir.path().join(&frame.path)).unwrap();
+            assert!(
+                !images::chunks(&png).iter().any(|c| c == "acTL"),
+                "{}",
+                frame.path
+            );
+            let (n, d) = (
+                total.num * frame.duration.den + frame.duration.num * total.den,
+                total.den * frame.duration.den,
+            );
+            let (num, den) = pixel_perfect::time::reduced(n, d);
+            total = export::Fraction { num, den };
+        }
+        assert_eq!(
+            Some(total),
+            entry.loop_seconds,
+            "{pointer}: durations sum to the loop"
+        );
+    }
 }
