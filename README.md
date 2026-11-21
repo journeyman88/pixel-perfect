@@ -6,6 +6,12 @@ You describe palettes, sprites, animations and compositions in a plain-text
 file. pixel-perfect turns them into pixel-exact images: same input, same bytes,
 every time. No antialiasing, no filtering, nearest-neighbor only.
 
+pixel-perfect follows the "do one thing and do it well" philosophy: it
+renders. Packing the images into atlases or sprite sheets and importing them
+into a game engine are left to third-party tools. Every render writes a
+`manifest.json` describing its output so that those tools can pick it up
+reliably.
+
 > **Status:** early stage. Worksheets can be loaded and validated; sprites and
 > static panels and scenes render to PNG, and animations (flipbooks, timelines,
 > sequences, and panels or scenes that contain them) render to APNG. Existing PNG pixel art
