@@ -1,0 +1,16 @@
+{
+    "palettes": [
+        {
+            "id": "p",
+            "colors": [{ "char": "a", "rgba": [1, 2, 3] }]
+        }
+    ],
+    "sprites": [
+        {
+            "id": "s",
+            "description": "Says \"hi\" with a \\ backslash",
+            "_palette": "p",
+            "lines": ["a"]
+        }
+    ]
+}

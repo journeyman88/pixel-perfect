@@ -109,12 +109,12 @@
             "type": "object",
             "properties": {
                 "char": {
-                    "description": "The character used in sprite lines for this color. Any single character except whitespace, control characters and the reserved `.` (transparent) and `=` (pass-through, see `overrideLines`).",
+                    "description": "The character used in sprite lines for this color. Any single character except whitespace, control characters, invisible format characters (such as zero-width spaces), combining marks and the reserved `.` (transparent) and `=` (pass-through, see `overrideLines`).",
                     "$comment": "Engine: must be unique inside the resolved palette.",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 1,
-                    "pattern": "^[^.=\\s\\p{Cc}]$"
+                    "pattern": "^[^.=\\s\\p{Cc}\\p{Cf}\\p{M}]$"
                 },
                 "rgba": {
                     "description": "Color as [red, green, blue] or [red, green, blue, alpha]. Channels are integers 0-255; alpha is a number 0.0-1.0, default 1.0 (opaque).",

@@ -1,0 +1,12 @@
+[package]
+name = "gen-alphabet"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "Generates src/import/alphabet/table.rs from the Unicode Character Database"
+
+# Standalone tool, not a member of the pixel-perfect package.
+[workspace]
+
+[dependencies]

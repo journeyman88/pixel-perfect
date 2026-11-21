@@ -1,0 +1,23 @@
+# Arrays of tables split by other tables, with comments.
+
+[[palettes]]
+id = "p"
+colors = [{ char = "a", rgba = [1, 2, 3] }]  # one color
+
+[[sprites]]
+id = "s"
+_palette = "p"
+lines = ["a"]
+
+[[flipbooks]]
+id = "f"
+width = 1
+height = 1
+fps = 1
+frames = [{ _sprite = "s", coordinates = [0, 0], duration = 1 }]
+
+# A second sprite, after the flipbook.
+[[sprites]]
+id = "t"
+_palette = "p"
+lines = ["a"]

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 The pixel-perfect Authors
 
-//! The `validate` and `render` commands.
+//! The `validate`, `render` and `import` commands.
 
 mod common;
+#[path = "common/images.rs"]
+mod images;
 
 use assert_cmd::Command;
 use common::fixture;
@@ -344,4 +346,173 @@ fn render_webp_side_limit_is_an_invalid_request() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("too large for WebP"), "{stderr}");
     assert!(!out.exists());
+}
+
+// ------------------------------------------------------------------ import
+
+/// A copy of `worksheet` and a PNG of a small image in a temporary directory.
+fn import_case(
+    worksheet: &str,
+    png: &[u8],
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let src = fixture(worksheet);
+    let ws = dir.path().join(src.file_name().unwrap());
+    std::fs::copy(&src, &ws).unwrap();
+    let png_path = dir.path().join("art.png");
+    std::fs::write(&png_path, png).unwrap();
+    (dir, ws, png_path)
+}
+
+fn coin() -> pixel_perfect::raster::Image {
+    use pixel_perfect::model::Rgba;
+    pixel_perfect::raster::Image::from_fn(8, 8, |x, y| {
+        if (x + y) % 3 == 0 {
+            Rgba([240, 190, 40, 255])
+        } else {
+            Rgba([0, 0, 0, 0])
+        }
+    })
+}
+
+#[test]
+fn import_prints_the_summary() {
+    let (_dir, ws, png) = import_case("valid/readme-example.yaml", &images::rgba_png(&coin()));
+    cli()
+        .arg("import")
+        .arg(&ws)
+        .arg(&png)
+        .args(["--id", "coin"])
+        .assert()
+        .code(0)
+        .stdout(format!(
+            "{}: added /palettes/coin, /sprites/coin (8\u{d7}8, 1 color)\n",
+            ws.display()
+        ))
+        .stderr("");
+}
+
+#[test]
+fn import_dry_run_prints_the_worksheet() {
+    let (_dir, ws, png) = import_case("valid/readme-example.yaml", &images::rgba_png(&coin()));
+    let before = std::fs::read_to_string(&ws).unwrap();
+    let out = cli()
+        .arg("import")
+        .arg(&ws)
+        .arg(&png)
+        .args(["--id", "coin", "--dry-run"])
+        .assert()
+        .code(0)
+        .get_output()
+        .clone();
+    assert_eq!(std::fs::read_to_string(&ws).unwrap(), before);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.starts_with(&before[..before.find("palettes:").unwrap()]));
+    assert!(stdout.contains("  - id: coin\n"));
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains("added /palettes/coin")
+    );
+}
+
+#[test]
+fn import_rejection_exits_1() {
+    let (_dir, ws, png) = import_case("valid/readme-example.yaml", &images::rgba_png(&coin()));
+    let out = cli()
+        .arg("import")
+        .arg(&ws)
+        .arg(&png)
+        .args(["--id", "heart"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains("sprite \"heart\" already exists")
+    );
+    // A JPEG is rejected too.
+    std::fs::write(&png, [0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+    let out = cli()
+        .arg("import")
+        .arg(&ws)
+        .arg(&png)
+        .args(["--id", "x"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains("art.png: not a PNG file")
+    );
+}
+
+#[test]
+fn import_usage_errors_exit_2() {
+    let (dir, ws, png) = import_case("valid/readme-example.yaml", &images::rgba_png(&coin()));
+    let before = std::fs::read_to_string(&ws).unwrap();
+    let run = |args: &[&str]| {
+        cli()
+            .arg("import")
+            .arg(&ws)
+            .arg(&png)
+            .args(args)
+            .assert()
+            .code(2);
+    };
+    run(&["--id", "a", "--palette", "warm", "--palette-id", "b"]);
+    run(&["--id", "a", "--max-colors", "0"]);
+    run(&["--id", "a", "--max-colors", "2000000"]);
+    run(&["--id", "a", "--scale", "65"]);
+    assert_eq!(std::fs::read_to_string(&ws).unwrap(), before);
+    let xml = dir.path().join("art.xml");
+    std::fs::write(&xml, "<worksheet/>").unwrap();
+    cli()
+        .arg("import")
+        .arg(&xml)
+        .arg(&png)
+        .args(["--id", "a"])
+        .assert()
+        .code(2);
+    assert_eq!(std::fs::read_to_string(&xml).unwrap(), "<worksheet/>");
+    cli()
+        .arg("import")
+        .arg(&ws)
+        .arg(dir.path().join("missing.png"))
+        .args(["--id", "a"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn import_then_render_gives_back_the_png() {
+    for scale in [1u32, 4] {
+        let png = images::rgba_png_scaled(&coin(), scale);
+        let (dir, ws, png_path) = import_case("../../examples/sprites.yaml", &png);
+        cli()
+            .arg("import")
+            .arg(&ws)
+            .arg(&png_path)
+            .args(["--id", "imported", "--scale", &scale.to_string()])
+            .assert()
+            .code(0);
+        let out = dir.path().join("out");
+        cli()
+            .arg("render")
+            .arg(&ws)
+            .arg("-o")
+            .arg(&out)
+            .assert()
+            .code(0);
+        let rendered = std::fs::read(out.join("sprites/imported.png")).unwrap();
+        assert_eq!(
+            images::decode(&rendered).2,
+            coin().pixels(),
+            "scale {scale}"
+        );
+    }
 }

@@ -1,0 +1,18 @@
+# A worksheet with comments around every collection.
+palettes:
+  - id: p
+    colors:
+      - { char: a, rgba: [1, 2, 3] }   # the only color
+
+# Sprites below.
+sprites:
+  - id: s
+    _palette: p
+    lines:
+      - "a"
+  # A comment at item level, after the last item.
+
+# About exports
+exports:
+  - "/sprites/s"
+# The end.

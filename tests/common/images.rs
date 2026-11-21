@@ -271,3 +271,81 @@ fn rgba_pixels(buf: &[u8], alpha: bool) -> Vec<Rgba> {
             .collect()
     }
 }
+
+/// How [`write_png`] encodes an image.
+pub struct PngSpec<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub color: png::ColorType,
+    pub depth: png::BitDepth,
+    /// Raw scanline data without filter bytes, as `png` expects.
+    pub data: &'a [u8],
+    pub palette: Option<&'a [u8]>,
+    pub trns: Option<&'a [u8]>,
+    /// Adds an `acTL` chunk (a one-frame APNG).
+    pub animated: bool,
+}
+
+impl<'a> PngSpec<'a> {
+    pub fn new(
+        width: u32,
+        height: u32,
+        color: png::ColorType,
+        depth: png::BitDepth,
+        data: &'a [u8],
+    ) -> Self {
+        PngSpec {
+            width,
+            height,
+            color,
+            depth,
+            data,
+            palette: None,
+            trns: None,
+            animated: false,
+        }
+    }
+}
+
+/// Encodes a PNG exactly as described, for decoder tests.
+pub fn write_png(spec: &PngSpec) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, spec.width, spec.height);
+        enc.set_color(spec.color);
+        enc.set_depth(spec.depth);
+        if let Some(p) = spec.palette {
+            enc.set_palette(p.to_vec());
+        }
+        if let Some(t) = spec.trns {
+            enc.set_trns(t.to_vec());
+        }
+        if spec.animated {
+            enc.set_animated(1, 0).unwrap();
+        }
+        let mut writer = enc.write_header().unwrap();
+        writer.write_image_data(spec.data).unwrap();
+        writer.finish().unwrap();
+    }
+    out
+}
+
+/// An 8-bit RGBA PNG of `image`.
+pub fn rgba_png(image: &Image) -> Vec<u8> {
+    let data: Vec<u8> = image.pixels().iter().flat_map(|p| p.0).collect();
+    write_png(&PngSpec::new(
+        image.width(),
+        image.height(),
+        png::ColorType::Rgba,
+        png::BitDepth::Eight,
+        &data,
+    ))
+}
+
+/// An 8-bit RGBA PNG of `image` enlarged `n` times.
+pub fn rgba_png_scaled(image: &Image, n: u32) -> Vec<u8> {
+    let big = Image::from_fn(image.width() * n, image.height() * n, |x, y| {
+        image.pixels()[(y / n * image.width() + x / n) as usize]
+    });
+    rgba_png(&big)
+}

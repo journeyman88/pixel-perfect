@@ -12,13 +12,18 @@
 //! (composing panels and scenes with [`compose`]),
 //! [`encode`] turns final images into PNG, and [`export`] plans file names,
 //! writes the files and the manifest.
+//!
+//! Import pipeline: [`import`] turns a PNG into a palette and a sprite and
+//! adds them to a worksheet through the format-preserving [`edit`]ors.
 
 pub mod animate;
 pub mod compose;
 pub mod delta;
+pub mod edit;
 pub mod encode;
 pub mod error;
 pub mod export;
+pub mod import;
 pub mod input;
 pub mod model;
 pub mod raster;

@@ -25,6 +25,36 @@ fn control_character_is_rejected_as_char() {
 }
 
 #[test]
+fn format_characters_and_combining_marks_are_rejected_as_char() {
+    // `\p{Cf}`: zero width space, BOM, a bidi control; `\p{M}`: Mn, Mc, Me.
+    for c in [
+        "\u{200B}", "\u{FEFF}", "\u{202E}", "\u{301}", "\u{903}", "\u{20DD}",
+    ] {
+        let mut doc = full();
+        set(&mut doc, "/palettes/0/colors/0/char", json!(c));
+        assert_error_within(&errors(doc), "/palettes/0/colors/0/char");
+    }
+}
+
+#[test]
+fn format_character_fixture_is_rejected() {
+    let err = pixel_perfect::load_file(&common::fixture("invalid/format-char.yaml")).unwrap_err();
+    assert_error_within(err.diagnostics(), "/palettes/0/colors/1/char");
+}
+
+#[test]
+fn precomposed_wide_and_rtl_chars_are_accepted() {
+    for c in ["é", "山", "Ж", "█", "א", "\u{E000}"] {
+        let mut doc = full();
+        set(&mut doc, "/palettes/0/colors/0/char", json!(c));
+        assert!(
+            pixel_perfect::schema::validate(&doc).is_empty(),
+            "{c:?} should pass the schema"
+        );
+    }
+}
+
+#[test]
 fn reserved_and_whitespace_chars_are_rejected() {
     for c in [".", "=", " ", "rr"] {
         let mut doc = full();

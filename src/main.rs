@@ -6,6 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions};
+use pixel_perfect::import::{self, ImportError, ImportOptions};
 use pixel_perfect::{LoadError, ResolvedWorksheet};
 
 /// Renders lossless pixel art from declarative worksheets.
@@ -45,6 +46,40 @@ enum Command {
         /// mistakes, not a memory budget.
         #[arg(long, value_name = "SIZE", default_value = "1GiB", value_parser = parse_max_image_size)]
         max_image_size: MaxImageSize,
+    },
+    /// Add a PNG to a worksheet as a new palette and sprite, losslessly.
+    ///
+    /// Only the new entries are inserted: comments and formatting are kept.
+    /// The result is validated and rendered before the file is replaced.
+    Import {
+        /// Worksheet to add to (.json, .yaml, .yml, .toml); edited in place.
+        worksheet: PathBuf,
+        /// PNG image to import.
+        png: PathBuf,
+        /// Id of the new sprite (and of the new palette, unless --palette-id).
+        #[arg(long)]
+        id: String,
+        /// Reuse this palette of the worksheet instead of creating one.
+        #[arg(long, value_name = "ID", conflicts_with = "palette_id")]
+        palette: Option<String>,
+        /// Id of the new palette (default: the sprite id).
+        #[arg(long, value_name = "ID")]
+        palette_id: Option<String>,
+        /// The PNG is an N x enlargement: each N x N block becomes one pixel.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=64))]
+        scale: u32,
+        /// Description of the new sprite.
+        #[arg(long)]
+        description: Option<String>,
+        /// Also add the sprite to the worksheet's `exports` list, if it has one.
+        #[arg(long)]
+        export: bool,
+        /// Most distinct colors to accept; the importer never quantizes.
+        #[arg(long, value_name = "N", default_value_t = import::DEFAULT_MAX_COLORS)]
+        max_colors: usize,
+        /// Print the resulting worksheet instead of writing it.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -100,6 +135,29 @@ fn main() -> ExitCode {
             };
             render(&worksheet, &options)
         }
+        Command::Import {
+            worksheet,
+            png,
+            id,
+            palette,
+            palette_id,
+            scale,
+            description,
+            export,
+            max_colors,
+            dry_run,
+        } => import(&ImportOptions {
+            worksheet,
+            png,
+            id,
+            palette,
+            palette_id,
+            scale,
+            description,
+            export,
+            max_colors,
+            dry_run,
+        }),
     };
     ExitCode::from(code)
 }
@@ -148,6 +206,34 @@ fn render(path: &Path, options: &RenderOptions) -> u8 {
         }
         Err(e) => {
             eprintln!("{e}");
+            USAGE
+        }
+    }
+}
+
+fn import(options: &ImportOptions) -> u8 {
+    match import::run(options) {
+        Ok(imported) => {
+            if options.dry_run {
+                print!("{}", imported.text);
+                eprintln!("{}", imported.summary);
+            } else {
+                println!("{}", imported.summary);
+            }
+            OK
+        }
+        Err(ImportError::InvalidWorksheet { diagnostics }) => {
+            for d in &diagnostics {
+                eprintln!("{}: {d}", options.worksheet.display());
+            }
+            INVALID
+        }
+        Err(ImportError::Rejected(message)) => {
+            eprintln!("{message}");
+            INVALID
+        }
+        Err(ImportError::Usage(message)) => {
+            eprintln!("{message}");
             USAGE
         }
     }

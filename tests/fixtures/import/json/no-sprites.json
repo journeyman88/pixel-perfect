@@ -1,0 +1,6 @@
+{
+  "description": "Only a palette; the importer adds the sprites collection.",
+  "palettes": [
+    { "id": "p", "colors": [{ "char": "a", "rgba": [1, 2, 3] }] }
+  ]
+}

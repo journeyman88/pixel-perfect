@@ -1,0 +1,9 @@
+palettes:
+- id: p
+  colors:
+  - { char: a, rgba: [1, 2, 3] }
+sprites:
+- id: s
+  _palette: p
+  lines:
+  - "a"

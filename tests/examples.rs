@@ -157,3 +157,20 @@ fn animation_example_renders_its_animations() {
         );
     }
 }
+
+#[test]
+fn slime_png_imports_back_into_the_sprites_example() {
+    // examples/slime.png is `slime` rendered with --scale 4.
+    let ws = pixel_perfect::load_file(&example("sprites.yaml")).unwrap();
+    let mut options = pixel_perfect::import::ImportOptions::new(
+        example("sprites.yaml"),
+        example("slime.png"),
+        "slime-copy",
+    );
+    options.palette = Some("slime".into());
+    options.scale = 4;
+    options.dry_run = true;
+    let imported = pixel_perfect::import::run(&options).unwrap();
+    let new = pixel_perfect::load_str(&imported.text, pixel_perfect::Format::Yaml).unwrap();
+    assert_eq!(new.sprites["slime-copy"].rows, ws.sprites["slime"].rows);
+}

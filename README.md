@@ -8,7 +8,8 @@ every time. No antialiasing, no filtering, nearest-neighbor only.
 
 > **Status:** early stage. Worksheets can be loaded and validated; sprites and
 > static panels and scenes render to PNG, and animations (flipbooks, timelines,
-> and panels or scenes that contain them) render to APNG. Development is planned with
+> and panels or scenes that contain them) render to APNG. Existing PNG pixel art
+> can be imported into a worksheet. Development is planned with
 > [OpenSpec](https://github.com/Fission-AI/OpenSpec) (see [`openspec/`](openspec/)).
 
 ## Usage
@@ -157,6 +158,63 @@ away from zero, so a movement to the left mirrors the same movement to the
 right. Flipbook elements play at their own `fps`, restart at every timeline
 loop, and `seekFlipbook` jumps them to the start of `frames[frameIndex]`.
 
+### Import
+
+```sh
+# Add coin.png to art.yaml as palette "coin" and sprite "coin".
+pixel-perfect import art.yaml coin.png --id coin
+```
+
+`import` appends a palette and a sprite that reproduce the PNG exactly. Every
+distinct color gets its own character and fully transparent pixels become `.`.
+The worksheet is edited **in place by insertion only**: comments, blank
+lines, key order and quoting are kept, and the new entries go at the end of
+`palettes` and `sprites`, using the indentation and line endings already in
+the file.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--id <ID>` | required | Id of the new sprite, and of the new palette. |
+| `--palette <ID>` | | Reuse this palette of the worksheet instead of creating one. Every color of the PNG must be in it. |
+| `--palette-id <ID>` | the sprite id | Id of the new palette. |
+| `--scale <N>` | `1` | The PNG is an N× enlargement. Each N×N block must be one color and becomes one pixel. |
+| `--description <TEXT>` | | `description` of the new sprite. |
+| `--export` | off | Also append `/sprites/<id>` to `exports`, if the worksheet has that list. |
+| `--max-colors <N>` | `256` | Most colors to accept. |
+| `--dry-run` | off | Print the resulting worksheet instead of writing it. |
+
+**Lossless only.** The importer never reduces colors. An image with more
+colors than `--max-colors` is rejected; the limit protects against importing a
+photo or a JPEG by mistake. Every PNG color type is accepted; 16-bit images
+only when each sample has an exact 8-bit value. Animated PNGs and other
+formats are rejected. Alpha is written as the shortest decimal that converts
+back to the same 8-bit value (128 → `0.5`).
+
+**Characters** come from an alphabet holding every character the schema
+allows for `char` (1,109,307 of them). Single-column visible characters come
+first: `a`–`z`, `A`–`Z`, `0`–`9`, ASCII punctuation, then about 27,000 more,
+such as accented letters, Greek, Cyrillic and box drawing. Wide, right-to-left,
+private-use and unassigned characters are only used after those run out.
+Colors take characters in the order they first appear, reading the image row
+by row.
+
+**Nothing is written unless everything checks out.** The original worksheet
+must be valid. Before the file is replaced, the result must be valid, must
+equal the original plus the new entries, must render the new sprite exactly
+as the PNG, and must contain the original text unchanged. The file is then
+replaced atomically: a temporary file is written and renamed over it. Ids that
+already exist are never overwritten. The worksheet is read once, so changes
+saved by an editor while the import runs are lost.
+
+In YAML, the importer understands the layout worksheets use: one block-style
+document with top-level keys at column 0. A collection written in flow style
+(`sprites: [...]`) or carrying an anchor or a tag is refused rather than
+rewritten. A one-line flow list of pointers such as `exports: [/sprites/a]` is
+extended in place. JSON may use any layout. TOML is edited with `toml_edit`.
+
+Exit codes: `0` imported, `1` worksheet invalid or import rejected, `2` usage
+error or unreadable file.
+
 ## Why
 
 - **Assets as code.** Worksheets are text: they diff, review and version cleanly,
@@ -276,6 +334,12 @@ YAML/TOML language servers).
 Rules the schema cannot express (references that resolve, no inheritance cycles,
 rows of equal width, characters present in the palette, ...) are documented in
 the schema as `$comment: "Engine: ..."` and enforced by the engine.
+
+A palette `char` is any single character except `.`, `=`, whitespace, control
+characters, invisible format characters (such as U+200B ZERO WIDTH SPACE) and
+combining marks, so that every row of `lines` shows exactly one visible
+character per pixel. Format characters and combining marks were accepted
+before the `import` command was added.
 
 ## License
 
