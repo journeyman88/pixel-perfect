@@ -1,0 +1,76 @@
+# A sequence over a scene: two planes moving at different speeds (parallax),
+# a light switched on and lifted in front, and a flickering timeline layer.
+palettes:
+  - id: p
+    colors:
+      - { char: s, rgba: [20, 30, 60] }
+      - { char: m, rgba: [60, 70, 90] }
+      - { char: t, rgba: [30, 90, 40] }
+      - { char: y, rgba: [255, 220, 80, 0.5] }
+      - { char: f, rgba: [255, 140, 0] }
+
+sprites:
+  - { id: sky, _palette: p, lines: ["ssssssss"] }
+  - { id: hill, _palette: p, lines: ["mmmm"] }
+  - { id: tree, _palette: p, lines: ["tt"] }
+  - { id: glow, _palette: p, lines: ["yyy"] }
+  - { id: flame, _palette: p, lines: ["f"] }
+
+panels:
+  - id: sky
+    width: 8
+    height: 4
+    elements:
+      - { _sprite: sky, coordinates: [0, 0] }
+      - { _sprite: sky, coordinates: [0, 3] }
+  - id: hills
+    width: 4
+    height: 1
+    elements:
+      - { _sprite: hill, coordinates: [0, 0] }
+  - id: trees
+    width: 2
+    height: 1
+    elements:
+      - { _sprite: tree, coordinates: [0, 0] }
+  - id: glow
+    width: 3
+    height: 1
+    elements:
+      - { _sprite: glow, coordinates: [0, 0] }
+  - id: fire
+    width: 1
+    height: 1
+    elements:
+      - { id: flame, _sprite: flame, coordinates: [0, 0] }
+
+timelines:
+  - id: flicker
+    _panel: fire
+    fps: 6
+    duration: 3
+    transitions:
+      - { kind: setVisible, _element: flame, value: false, at: 2 }
+
+scenes:
+  - id: valley
+    width: 8
+    height: 4
+    layers:
+      - { _panel: sky, coordinates: [0, 0] }
+      - { id: far, _panel: hills, coordinates: [4, 1], zIndex: 1 }
+      - { id: near, _panel: trees, coordinates: [6, 2], zIndex: 2 }
+      - { id: light, _panel: glow, coordinates: [1, 2], zIndex: 0, visible: false }
+      - { id: fire, _timeline: flicker, coordinates: [2, 3], zIndex: 3 }
+
+sequences:
+  - id: drift
+    description: Parallax drift with a light switching on.
+    _scene: valley
+    fps: 4
+    duration: 8
+    actions:
+      - { kind: moveTo, _layer: far, coordinates: [0, 1], start: 0, duration: 8 }
+      - { kind: moveTo, _layer: near, coordinates: [-2, 2], start: 0, duration: 8 }
+      - { kind: setVisible, _layer: light, value: true, at: 4 }
+      - { kind: moveToZ, _layer: light, value: 5, at: 6 }

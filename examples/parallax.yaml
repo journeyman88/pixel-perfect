@@ -1,0 +1,193 @@
+# Parallax: a dusk landscape whose planes slide at different speeds, with a
+# lantern that lights up behind the trees and then moves in front of them.
+# 64x32, animated.
+#
+#   pixel-perfect render examples/parallax.yaml -o out --scale 6
+#
+# Writes two APNG files that loop forever:
+#
+# - scenes/valley.png (64x32): the still landscape with its blinking
+#   firefly, 0.5 s;
+# - sequences/dusk.png (64x32): the landscape scrolling left, 4 s.
+#
+# The scene `valley` stacks six layers: a static sky, far mountains, hills,
+# a lantern glow, a row of near trees and a firefly. The sequence `dusk`
+# animates them at 16 fps over 64 frame-units. What it shows:
+#
+# - parallax with `moveTo`: each plane is a panel wider than the canvas,
+#   made of one sprite repeated with `tile`. It moves left by exactly one
+#   tile width per loop (16, 32 and 64 pixels), so the loop is seamless and
+#   the nearer the plane, the faster it moves;
+# - effect layers: the lantern glow starts hidden (`visible: false`). It is
+#   switched on with `setVisible` at 1 s, lifted in front of the trees with
+#   `moveToZ` at 2 s and switched off again at 3.5 s;
+# - an animated layer: the firefly is a timeline blinking every 0.5 s. It
+#   keeps its own rhythm while the sequence runs, and the clock is the least
+#   common multiple of 16 and 8 fps.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  - id: dusk
+    colors:
+      - { char: a, rgba: [24, 22, 58] }       # sky, top
+      - { char: b, rgba: [38, 30, 80] }
+      - { char: c, rgba: [62, 40, 98] }
+      - { char: d, rgba: [98, 52, 108] }
+      - { char: e, rgba: [142, 66, 104] }
+      - { char: f, rgba: [190, 88, 92] }
+      - { char: g, rgba: [228, 126, 84] }
+      - { char: h, rgba: [246, 176, 96] }      # sky, horizon
+      - { char: M, rgba: [70, 50, 96] }        # far mountains
+      - { char: H, rgba: [40, 44, 70] }        # hills
+      - { char: T, rgba: [16, 28, 30] }        # near trees
+      - { char: k, rgba: [30, 20, 18] }        # trunks
+      - { char: G, rgba: [20, 34, 28] }        # ground
+      - { char: L, rgba: [255, 236, 170] }     # lantern
+      - { char: Y, rgba: [255, 200, 110, 0.5] }  # glow
+      - { char: y, rgba: [255, 180, 90, 0.25] }  # outer glow
+      - { char: F, rgba: [210, 255, 120] }     # firefly
+
+sprites:
+  - id: sky
+    _palette: dusk
+    lines:
+      - "a"
+      - "b"
+      - "c"
+      - "d"
+      - "e"
+      - "f"
+      - "g"
+      - "h"
+  - id: mountain
+    _palette: dusk
+    lines:
+      - "................"
+      - ".......M........"
+      - "......MMM......."
+      - ".....MMMMM......"
+      - "....MMMMMMM...M."
+      - "...MMMMMMMMM.MMM"
+      - ".MMMMMMMMMMMMMMM"
+      - "MMMMMMMMMMMMMMMM"
+  - id: hill
+    _palette: dusk
+    lines:
+      - "................................"
+      - "...........HHHHHH..............."
+      - ".......HHHHHHHHHHHHH............"
+      - "....HHHHHHHHHHHHHHHHHHH........."
+      - ".HHHHHHHHHHHHHHHHHHHHHHHHHH....H"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+  - id: trees
+    _palette: dusk
+    lines:
+      - "...T............"
+      - "..TTT..........."
+      - ".TTTTT......T..."
+      - "..TTT......TTT.."
+      - ".TTTTT....TTTTT."
+      - "TTTTTTT....TTT.."
+      - "...k......TTTTT."
+      - "GGGkGGGGGGGGkGGG"
+      - "GGGGGGGGGGGGGGGG"
+  - id: glow
+    _palette: dusk
+    lines:
+      - "...y..."
+      - "..yYy.."
+      - ".yYLYy."
+      - "yYLLLYy"
+      - ".yYLYy."
+      - "..yYy.."
+      - "...y..."
+  - id: firefly
+    _palette: dusk
+    lines: ["F"]
+
+panels:
+  - id: sky
+    width: 64
+    height: 32
+    elements:
+      - _sprite: sky
+        coordinates: [0, 0]
+        transforms: [{ kind: scale, width: 64, height: 32 }]
+  # Each plane is one tile wider than the canvas, so that moving it by one
+  # tile width never shows its edge.
+  - id: mountains
+    width: 80
+    height: 8
+    elements:
+      - _sprite: mountain
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 80, height: 8 }]
+  - id: hills
+    width: 96
+    height: 12
+    elements:
+      - _sprite: hill
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 96, height: 12 }]
+  - id: trees
+    width: 128
+    height: 9
+    elements:
+      - _sprite: trees
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 128, height: 9 }]
+  - id: lantern
+    width: 7
+    height: 7
+    elements:
+      - { _sprite: glow, coordinates: [0, 0] }
+  - id: firefly
+    width: 1
+    height: 1
+    elements:
+      - { id: spark, _sprite: firefly, coordinates: [0, 0] }
+
+timelines:
+  - id: blink
+    description: The firefly is lit for a quarter of every half second.
+    _panel: firefly
+    fps: 8
+    duration: 4
+    transitions:
+      - { kind: setVisible, _element: spark, value: false, at: 1 }
+
+scenes:
+  - id: valley
+    width: 64
+    height: 32
+    layers:
+      - { _panel: sky, coordinates: [0, 0] }
+      - { id: mountains, _panel: mountains, coordinates: [0, 13], zIndex: 1 }
+      - { id: hills, _panel: hills, coordinates: [0, 18], zIndex: 2 }
+      - { id: lantern, _panel: lantern, coordinates: [38, 18], zIndex: 3, visible: false }
+      - { id: trees, _panel: trees, coordinates: [0, 23], zIndex: 4 }
+      - { id: firefly, _timeline: blink, coordinates: [20, 16], zIndex: 5 }
+
+sequences:
+  - id: dusk
+    description: The landscape scrolls left; the lantern lights up and comes forward.
+    _scene: valley
+    fps: 16
+    duration: 64
+    actions:
+      - { kind: moveTo, _layer: mountains, coordinates: [-16, 13], start: 0, duration: 64 }
+      - { kind: moveTo, _layer: hills, coordinates: [-32, 18], start: 0, duration: 64 }
+      - { kind: moveTo, _layer: trees, coordinates: [-64, 23], start: 0, duration: 64 }
+      - { kind: setVisible, _layer: lantern, value: true, at: 16 }
+      - { kind: moveToZ, _layer: lantern, value: 10, at: 32 }
+      - { kind: setVisible, _layer: lantern, value: false, at: 56 }
+
+exports:
+  - /sequences/dusk
+  - /scenes/valley

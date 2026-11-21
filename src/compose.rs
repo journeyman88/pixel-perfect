@@ -81,12 +81,17 @@ pub fn is_animated_panel(panel: &Panel) -> bool {
         .any(|e| e.visible && matches!(e.source(), ElementSource::Flipbook(_)))
 }
 
-/// True if a layer of the scene is a timeline or uses an animated panel.
+/// True if a visible layer of the scene is a timeline or uses an animated
+/// panel.
 pub fn is_animated_scene(ws: &ResolvedWorksheet, scene: &Scene) -> bool {
-    scene.layers.iter().any(|layer| match &layer.panel {
-        Some(id) => find_panel(ws, id).is_some_and(is_animated_panel),
-        None => true, // `_timeline`
-    })
+    scene
+        .layers
+        .iter()
+        .filter(|l| l.visible)
+        .any(|layer| match &layer.panel {
+            Some(id) => find_panel(ws, id).is_some_and(is_animated_panel),
+            None => true, // `_timeline`
+        })
 }
 
 pub(crate) fn find_panel<'a>(ws: &'a ResolvedWorksheet, id: &str) -> Option<&'a Panel> {
@@ -145,14 +150,14 @@ pub fn panel(ws: &ResolvedWorksheet, id: &str) -> Image {
     flatten(panel.width, panel.height, &items)
 }
 
-/// Renders the static scene `id`: each panel layer is flattened on its own
-/// canvas, then drawn on the scene.
+/// Renders the static scene `id`: each visible panel layer is flattened on
+/// its own canvas, then drawn on the scene. Hidden layers are skipped.
 ///
 /// Panics if `id` is not a scene or the scene is animated.
 pub fn scene(ws: &ResolvedWorksheet, id: &str) -> Image {
     let scene = find_scene(ws, id).unwrap_or_else(|| panic!("unknown scene {id:?}"));
-    let images: Vec<Image> = scene
-        .layers
+    let layers: Vec<_> = scene.layers.iter().filter(|l| l.visible).collect();
+    let images: Vec<Image> = layers
         .iter()
         .map(|layer| {
             let Some(panel_id) = &layer.panel else {
@@ -161,8 +166,7 @@ pub fn scene(ws: &ResolvedWorksheet, id: &str) -> Image {
             panel(ws, panel_id)
         })
         .collect();
-    let items: Vec<Placed> = scene
-        .layers
+    let items: Vec<Placed> = layers
         .iter()
         .zip(&images)
         .map(|(l, image)| Placed {

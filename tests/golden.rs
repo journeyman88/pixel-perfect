@@ -16,8 +16,10 @@ use std::path::{Path, PathBuf};
 use pixel_perfect::export::{self, OutputFormat, RenderOptions};
 
 fn render_to(fixture: &str, dir: &Path, format: OutputFormat, scale: u32, safe_build: bool) {
-    let text = std::fs::read_to_string(common::fixture(fixture)).unwrap();
-    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let path = common::fixture(fixture);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let input = pixel_perfect::Format::from_path(&path).unwrap();
+    let mut doc = pixel_perfect::input::parse(&text, input).unwrap();
     doc.as_object_mut().unwrap().remove("exports");
     let ws = common::load(doc);
     let options = RenderOptions {
@@ -156,6 +158,46 @@ fn animation_fixture_webp() {
 /// `webpinfo` is not installed: the other tests decode with `image-webp`,
 /// which is more lenient than libwebp.
 #[test]
+fn sequence_fixture() {
+    // manifest + 5 sprites + 5 panels + timeline + animated scene + sequence
+    check("sequence", "valid/sequence.yaml", 1, false, 14);
+}
+
+#[test]
+fn sequence_fixture_webp() {
+    check_format(
+        "sequence-webp",
+        "valid/sequence.yaml",
+        OutputFormat::Webp,
+        1,
+        false,
+        14,
+    );
+}
+
+#[test]
+fn sequence_renders_are_byte_identical() {
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for dir in [&a, &b] {
+        render_to(
+            "valid/sequence.yaml",
+            dir.path(),
+            OutputFormat::Png,
+            2,
+            false,
+        );
+    }
+    for relative in tree(a.path()) {
+        assert_eq!(
+            std::fs::read(a.path().join(&relative)).unwrap(),
+            std::fs::read(b.path().join(&relative)).unwrap(),
+            "{}",
+            relative.display()
+        );
+    }
+}
+
+#[test]
 fn webp_goldens_pass_webpinfo() {
     if std::process::Command::new("webpinfo")
         .arg("-version")
@@ -167,7 +209,7 @@ fn webp_goldens_pass_webpinfo() {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     let mut checked = 0;
-    for name in ["full-webp", "scene-webp", "animation-webp"] {
+    for name in ["full-webp", "scene-webp", "animation-webp", "sequence-webp"] {
         for relative in tree(&root.join(name)) {
             if relative.extension().is_none_or(|e| e != "webp") {
                 continue;
@@ -187,7 +229,7 @@ fn webp_goldens_pass_webpinfo() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 27);
+    assert_eq!(checked, 40);
 }
 
 /// Every golden APNG, decoded by compositing its frames as the APNG
@@ -201,6 +243,7 @@ fn golden_apngs_decode_to_the_rendered_frames() {
         ("full", "valid/full.json"),
         ("full-x4-safe", "valid/full.json"),
         ("animation", "valid/animation.json"),
+        ("sequence", "valid/sequence.yaml"),
     ] {
         let ws = pixel_perfect::load_file(&common::fixture(fixture)).unwrap();
         let manifest: serde_json::Value = serde_json::from_str(
@@ -229,6 +272,7 @@ fn golden_apngs_decode_to_the_rendered_frames() {
         }
     }
     // full: flipbook, timeline, scene (twice, at two scales); animation:
-    // flipbook, 2 timelines, scene (its panels are static).
-    assert_eq!(checked, 10);
+    // flipbook, 2 timelines, scene (its panels are static); sequence:
+    // timeline, scene, sequence.
+    assert_eq!(checked, 13);
 }

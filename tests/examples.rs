@@ -174,3 +174,28 @@ fn slime_png_imports_back_into_the_sprites_example() {
     let new = pixel_perfect::load_str(&imported.text, pixel_perfect::Format::Yaml).unwrap();
     assert_eq!(new.sprites["slime-copy"].rows, ws.sprites["slime"].rows);
 }
+
+#[test]
+fn parallax_example_renders_its_sequence() {
+    let ws = pixel_perfect::load_file(&example("parallax.yaml")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format: OutputFormat::Png,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    assert!(plan.notices.is_empty(), "{:?}", plan.notices);
+    let dusk = &manifest.files["/sequences/dusk"];
+    assert_eq!((dusk.width, dusk.height), (64, 32));
+    assert_eq!(dusk.loop_seconds, Some(export::Fraction { num: 4, den: 1 }));
+    let png = std::fs::read(dir.path().join(&dusk.path)).unwrap();
+    assert!(images::chunks(&png).iter().any(|c| c == "acTL"));
+    let valley = &manifest.files["/scenes/valley"];
+    assert_eq!(
+        valley.loop_seconds,
+        Some(export::Fraction { num: 1, den: 2 })
+    );
+}

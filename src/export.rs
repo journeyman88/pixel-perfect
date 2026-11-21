@@ -22,7 +22,14 @@ use crate::webp::{self, WebpError, WebpFrame};
 use crate::{encode, render, time};
 
 /// Collections that can be exported, in worksheet order.
-const COLLECTIONS: [&str; 5] = ["sprites", "flipbooks", "panels", "timelines", "scenes"];
+const COLLECTIONS: [&str; 6] = [
+    "sprites",
+    "flipbooks",
+    "panels",
+    "timelines",
+    "scenes",
+    "sequences",
+];
 
 /// Largest image side a PNG can store.
 const MAX_PNG_SIDE: u64 = i32::MAX as u64;
@@ -269,6 +276,11 @@ fn locate(ws: &ResolvedWorksheet, collection: &str, id: &str) -> Option<(usize, 
             let i = m.scenes.iter().position(|s| s.id == id)?;
             Some((i, (m.scenes[i].width, m.scenes[i].height)))
         }
+        "sequences" => {
+            let i = m.sequences.iter().position(|q| q.id == id)?;
+            let scene = m.scenes.iter().find(|s| s.id == m.sequences[i].scene)?;
+            Some((i, (scene.width, scene.height)))
+        }
         _ => None,
     }
 }
@@ -281,6 +293,7 @@ fn collection_ids<'a>(ws: &'a ResolvedWorksheet, collection: &str) -> Vec<&'a st
         "panels" => m.panels.iter().map(|s| s.id.as_str()).collect(),
         "timelines" => m.timelines.iter().map(|s| s.id.as_str()).collect(),
         "scenes" => m.scenes.iter().map(|s| s.id.as_str()).collect(),
+        "sequences" => m.sequences.iter().map(|s| s.id.as_str()).collect(),
         _ => Vec::new(),
     }
 }
@@ -494,10 +507,19 @@ fn plan_animation(
     Ok(Fraction { num, den })
 }
 
+/// A length in seconds as `n` or `n/d`.
+fn seconds_text(f: &Fraction) -> String {
+    if f.den == 1 {
+        f.num.to_string()
+    } else {
+        format!("{}/{}", f.num, f.den)
+    }
+}
+
 /// Decides every output of a render, or returns every problem found.
 pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
-    let notices = Vec::new();
+    let mut notices = Vec::new();
 
     // Selection: (collection, id). Every collection is exportable.
     let mut selected: Vec<(&'static str, String)> = Vec::new();
@@ -587,7 +609,21 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
         let loop_seconds = if animate::is_animated(ws, collection, &id) {
             let resource = format!("/{collection}/{index}");
             match plan_animation(ws, collection, &id, (sw, sh), options) {
-                Ok(seconds) => Some(seconds),
+                Ok(seconds) => {
+                    if collection == "sequences" {
+                        let q = &ws.model.sequences[index];
+                        let (num, den) = time::reduced(q.duration, u64::from(q.fps));
+                        let own = Fraction { num, den };
+                        if own != seconds {
+                            notices.push(format!(
+                                "/sequences/{id} loops every {} s (its own duration is {} s) because of its animated layers",
+                                seconds_text(&seconds),
+                                seconds_text(&own)
+                            ));
+                        }
+                    }
+                    Some(seconds)
+                }
                 Err(message) => {
                     diagnostics.push(Diagnostic::at(resource, message));
                     continue;
@@ -627,6 +663,12 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
                 "panels" => sizes.panel(ws, index),
                 "timelines" => sizes.timeline(ws, index),
                 "scenes" => sizes.scene(ws, index),
+                "sequences" => {
+                    let scene = &ws.model.sequences[index].scene;
+                    if let Some(k) = ws.model.scenes.iter().position(|s| &s.id == scene) {
+                        sizes.scene(ws, k);
+                    }
+                }
                 _ => {}
             }
             if options.scale > 1 {

@@ -1,0 +1,87 @@
+{
+  "format": "png",
+  "scale": 1,
+  "safeBuild": false,
+  "files": {
+    "/panels/fire": {
+      "path": "panels/fire.png",
+      "width": 1,
+      "height": 1
+    },
+    "/panels/glow": {
+      "path": "panels/glow.png",
+      "width": 3,
+      "height": 1
+    },
+    "/panels/hills": {
+      "path": "panels/hills.png",
+      "width": 4,
+      "height": 1
+    },
+    "/panels/sky": {
+      "path": "panels/sky.png",
+      "width": 8,
+      "height": 4
+    },
+    "/panels/trees": {
+      "path": "panels/trees.png",
+      "width": 2,
+      "height": 1
+    },
+    "/scenes/valley": {
+      "path": "scenes/valley.png",
+      "width": 8,
+      "height": 4,
+      "frames": 2,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    },
+    "/sequences/drift": {
+      "path": "sequences/drift.png",
+      "width": 8,
+      "height": 4,
+      "frames": 12,
+      "loop": {
+        "num": 2,
+        "den": 1
+      }
+    },
+    "/sprites/flame": {
+      "path": "sprites/flame.png",
+      "width": 1,
+      "height": 1
+    },
+    "/sprites/glow": {
+      "path": "sprites/glow.png",
+      "width": 3,
+      "height": 1
+    },
+    "/sprites/hill": {
+      "path": "sprites/hill.png",
+      "width": 4,
+      "height": 1
+    },
+    "/sprites/sky": {
+      "path": "sprites/sky.png",
+      "width": 8,
+      "height": 1
+    },
+    "/sprites/tree": {
+      "path": "sprites/tree.png",
+      "width": 2,
+      "height": 1
+    },
+    "/timelines/flicker": {
+      "path": "timelines/flicker.png",
+      "width": 1,
+      "height": 1,
+      "frames": 2,
+      "loop": {
+        "num": 1,
+        "den": 2
+      }
+    }
+  }
+}

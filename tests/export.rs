@@ -865,3 +865,96 @@ fn repeated_webp_render_is_byte_identical_without_metadata() {
         }
     }
 }
+
+// ---------------------------------------------------------------- sequences
+
+fn sequence_value() -> Value {
+    let text = std::fs::read_to_string(common::fixture("valid/sequence.yaml")).unwrap();
+    pixel_perfect::input::parse(&text, Format::Yaml).unwrap()
+}
+
+fn render_sequence(
+    doc: Value,
+    format: OutputFormat,
+) -> (tempfile::TempDir, export::Plan, export::Manifest) {
+    let ws = pixel_perfect::load_value(doc).unwrap_or_else(|e| panic!("{:#?}", e.diagnostics()));
+    let dir = tempfile::tempdir().unwrap();
+    let options = RenderOptions {
+        output_path: dir.path().to_owned(),
+        format,
+        scale: 1,
+        safe_build: false,
+        max_image_size: Some(export::DEFAULT_MAX_IMAGE_SIZE),
+    };
+    let (plan, manifest) = export::render(&ws, &options).unwrap();
+    (dir, plan, manifest)
+}
+
+#[test]
+fn sequence_is_written_as_apng_with_the_scene_size() {
+    let (dir, plan, manifest) = render_sequence(sequence_value(), OutputFormat::Png);
+    let png = std::fs::read(dir.path().join("sequences/drift.png")).unwrap();
+    assert!(images::chunks(&png).iter().any(|c| c == "acTL"));
+    assert_eq!(images::header(&png).0, 8);
+    assert_eq!(images::header(&png).1, 4);
+    let entry = &manifest.files["/sequences/drift"];
+    assert_eq!(
+        (entry.path.as_str(), entry.width, entry.height),
+        ("sequences/drift.png", 8, 4)
+    );
+    assert!(entry.frames.is_some_and(|n| n > 1));
+    assert_eq!(
+        entry.loop_seconds,
+        Some(export::Fraction { num: 2, den: 1 })
+    );
+    // Implicit export: the scene is written too, and no notice is needed.
+    assert!(dir.path().join("scenes/valley.png").exists());
+    assert!(plan.notices.is_empty(), "{:?}", plan.notices);
+}
+
+#[test]
+fn sequence_is_written_as_animated_webp() {
+    let (dir, _, manifest) = render_sequence(sequence_value(), OutputFormat::Webp);
+    let webp = std::fs::read(dir.path().join("sequences/drift.webp")).unwrap();
+    let names: Vec<String> = images::webp_chunks(&webp)
+        .iter()
+        .map(|c| c.fourcc.clone())
+        .collect();
+    assert_eq!(&names[..2], ["VP8X", "ANIM"]);
+    assert_eq!(
+        manifest.files["/sequences/drift"].path,
+        "sequences/drift.webp"
+    );
+}
+
+#[test]
+fn explicit_sequence_export() {
+    let mut doc = sequence_value();
+    doc["exports"] = json!(["/sequences/drift"]);
+    let (_, _, manifest) = render_sequence(doc, OutputFormat::Png);
+    assert_eq!(
+        manifest.files.keys().collect::<Vec<_>>(),
+        ["/sequences/drift"]
+    );
+}
+
+#[test]
+fn longer_loop_prints_a_notice() {
+    // Sequence: 5 frame-units at 4 fps = 5/4 s; flicker layer: 1/2 s.
+    let mut doc = sequence_value();
+    doc["sequences"][0]["duration"] = json!(5);
+    doc["sequences"][0]["actions"] =
+        json!([{ "kind": "setVisible", "_layer": "light", "value": true, "at": 4 }]);
+    doc["exports"] = json!(["/sequences/drift"]);
+    let (_, plan, manifest) = render_sequence(doc, OutputFormat::Png);
+    assert_eq!(
+        plan.notices,
+        [
+            "/sequences/drift loops every 5/2 s (its own duration is 5/4 s) because of its animated layers"
+        ]
+    );
+    assert_eq!(
+        manifest.files["/sequences/drift"].loop_seconds,
+        Some(export::Fraction { num: 5, den: 2 })
+    );
+}

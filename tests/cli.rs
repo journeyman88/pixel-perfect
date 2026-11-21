@@ -516,3 +516,43 @@ fn import_then_render_gives_back_the_png() {
         );
     }
 }
+
+#[test]
+fn render_prints_the_sequence_loop_notice() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let text = std::fs::read_to_string(fixture("valid/sequence.yaml"))
+        .unwrap()
+        // The flicker timeline now loops every 1.5 s; the sequence lasts 2 s.
+        .replace(
+            "    fps: 6\n    duration: 3\n",
+            "    fps: 6\n    duration: 9\n",
+        );
+    let ws = dir.path().join("seq.yaml");
+    std::fs::write(&ws, text).unwrap();
+    let out = cli()
+        .arg("render")
+        .arg(&ws)
+        .arg("-o")
+        .arg(dir.path().join("out"))
+        .assert()
+        .code(0)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(
+        stderr,
+        format!(
+            "{}: note: /sequences/drift loops every 6 s (its own duration is 2 s) because of its animated layers\n",
+            ws.display()
+        )
+    );
+    // Without the longer layer, nothing is printed.
+    cli()
+        .arg("render")
+        .arg(fixture("valid/sequence.yaml"))
+        .arg("-o")
+        .arg(dir.path().join("out2"))
+        .assert()
+        .code(0)
+        .stderr("");
+}

@@ -37,9 +37,9 @@ worksheet as `validate` does and write nothing if the worksheet is invalid.
 ### Requirement: Output paths
 By default, each exported resource SHALL be written to
 `<output-path>/<collection>/<id>.<format>`, where `<collection>` is the worksheet
-collection name (`sprites`, `flipbooks`, `panels`, `timelines`, `scenes`).
-Missing directories SHALL be created and existing files SHALL be overwritten.
-Files not produced by the current render SHALL NOT be deleted.
+collection name (`sprites`, `flipbooks`, `panels`, `timelines`, `scenes`,
+`sequences`). Missing directories SHALL be created and existing files SHALL be
+overwritten. Files not produced by the current render SHALL NOT be deleted.
 
 #### Scenario: Nested output
 - **WHEN** sprites `hero` and `coin` are rendered with `--output-path build/art`
@@ -48,6 +48,10 @@ Files not produced by the current render SHALL NOT be deleted.
 #### Scenario: Same id in different collections
 - **WHEN** a sprite and a panel are both called `hero` and both are exported
 - **THEN** they are written to `sprites/hero.png` and `panels/hero.png` without conflict
+
+#### Scenario: Sequence output
+- **WHEN** sequence `parallax` is exported
+- **THEN** it is written to `sequences/parallax.png` with the size of its scene
 
 ### Requirement: File-safe ids
 Without `--safe-build`, before writing anything, the engine SHALL reject
@@ -117,12 +121,12 @@ byte-identical for identical renders.
 The engine SHALL render the resources listed in `exports`, or, when `exports` is
 absent, every resource of every collection except palettes. With `--format png`,
 sprites, static panels and static scenes SHALL be written as PNG, and
-flipbooks, timelines and animated panels and scenes (see the composition
-capability) SHALL be written as APNG (see the apng-export capability), with the
-`.png` extension and the same output paths, even when the animation has a
-single frame. With `--format webp`, the same resources SHALL be written as
-static and animated WebP respectively (see the webp-export capability), with the
-`.webp` extension and the same output paths.
+flipbooks, timelines, sequences and animated panels and scenes (see the
+composition capability) SHALL be written as APNG (see the apng-export
+capability), with the `.png` extension and the same output paths, even when the
+animation has a single frame. With `--format webp`, the same resources SHALL be
+written as static and animated WebP respectively (see the webp-export
+capability), with the `.webp` extension and the same output paths.
 
 #### Scenario: Explicit exports
 - **WHEN** `exports` is `["/sprites/hero"]` and the worksheet also defines sprite `coin`
@@ -143,6 +147,10 @@ static and animated WebP respectively (see the webp-export capability), with the
 #### Scenario: Animated resources as WebP
 - **WHEN** the same exports are rendered with `--format webp`
 - **THEN** `flipbooks/spin.webp`, `timelines/walk.webp` and `scenes/night.webp` are written as animated WebP, and a static panel would be written as a static WebP
+
+#### Scenario: Implicit export of a sequence
+- **WHEN** `exports` is absent and the worksheet defines scene `night` and sequence `flicker` over it
+- **THEN** `scenes/night.png` and `sequences/flicker.png` are both written, the sequence as APNG
 
 ### Requirement: Integer upscale
 With `--scale N` (an integer from 1 to 64), the engine SHALL enlarge each final

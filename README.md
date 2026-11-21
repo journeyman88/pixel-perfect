@@ -8,7 +8,7 @@ every time. No antialiasing, no filtering, nearest-neighbor only.
 
 > **Status:** early stage. Worksheets can be loaded and validated; sprites and
 > static panels and scenes render to PNG, and animations (flipbooks, timelines,
-> and panels or scenes that contain them) render to APNG. Existing PNG pixel art
+> sequences, and panels or scenes that contain them) render to APNG. Existing PNG pixel art
 > can be imported into a worksheet. Development is planned with
 > [OpenSpec](https://github.com/Fission-AI/OpenSpec) (see [`openspec/`](openspec/)).
 
@@ -158,6 +158,36 @@ away from zero, so a movement to the left mirrors the same movement to the
 right. Flipbook elements play at their own `fps`, restart at every timeline
 loop, and `seekFlipbook` jumps them to the start of `frames[frameIndex]`.
 
+### Sequences
+
+A sequence animates the layers of a scene the way a timeline animates the
+elements of a panel. It has its own `fps` and `duration`, and its `actions`
+target layers by `id` (`_layer`):
+
+- `moveTo` moves a layer linearly, with the same rounding as timelines. Use
+  it for parallax: planes wider than the canvas, made with `tile`, moved by
+  exactly one tile width per loop, loop seamlessly.
+- `setVisible` shows or hides a layer at `at`, starting from its `visible`
+  in the scene.
+- `moveToZ` changes a layer's `zIndex` at `at`, for example to bring a light
+  in front of a plane.
+
+Time is global: animated layers (timelines, panels with flipbooks) keep
+their own rhythm while the sequence moves them, exactly as in a scene. The
+file therefore loops on the least common multiple of the sequence's duration
+and the loops of its animated layers. When that is longer than the sequence
+itself, `render` prints a note:
+
+```text
+night.yaml: note: /sequences/night loops every 12 s (its own duration is 4 s) because of its animated layers
+```
+
+Sequences are written to `sequences/<id>.png`, as APNG, or as animated WebP
+with `--format webp`. A layer with `visible: false` is not drawn, in static
+scenes too. Before sequences existed, `visible` on a layer passed validation
+but was ignored. A hidden animated layer does not lengthen a scene's loop.
+In a sequence it counts only if some `setVisible` can show it.
+
 ### Import
 
 ```sh
@@ -256,7 +286,8 @@ not in the worksheet.
 | **flipbook** | A sprite-level animation: sprites shown in sequence on a fixed canvas. |
 | **panel** | A single-plane composition of sprites and flipbooks. |
 | **timeline** | A panel-level animation: transitions (move, show/hide, z-order, transforms) applied over time. |
-| **scene** | A multi-plane composition stacking panels and timelines as layers. |
+| **scene** | A multi-plane composition stacking panels and timelines as layers. A layer can be hidden (`visible: false`) and given an `id`. |
+| **sequence** | A scene-level animation: actions (move, show/hide, z-order) applied over time to the scene's layers, for parallax and effect layers such as lights. |
 | **exports** | The resources to render, as pointers like `/sprites/hero`. If omitted, everything renderable is exported. |
 
 Sprites and flipbook frames support `flip`, `rotate` (90/180/270), `scale`

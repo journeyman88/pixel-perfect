@@ -482,3 +482,126 @@ fn errors_are_collected_not_stopped_at_the_first() {
     ]);
     assert!(e.len() >= 3, "{}", common::render(&e));
 }
+
+// ---------------------------------------------------------------- sequences
+
+fn sequence_doc() -> serde_json::Value {
+    let text = std::fs::read_to_string(common::fixture("valid/sequence.yaml")).unwrap();
+    pixel_perfect::input::parse(&text, Format::Yaml).unwrap()
+}
+
+fn sequence_errors(changes: &[(&str, serde_json::Value)]) -> Vec<pixel_perfect::Diagnostic> {
+    let mut doc = sequence_doc();
+    for (pointer, value) in changes {
+        set(&mut doc, pointer, value.clone());
+    }
+    errors(doc)
+}
+
+#[test]
+fn duplicate_layer_id() {
+    let errs = sequence_errors(&[("/scenes/0/layers/2/id", json!("far"))]);
+    assert_error(
+        &errs,
+        "/scenes/0/layers/2/id",
+        "duplicate layer id \"far\" in scene \"valley\"",
+    );
+}
+
+#[test]
+fn same_layer_id_in_two_scenes() {
+    let mut doc = sequence_doc();
+    let scene = doc["scenes"][0].clone();
+    let mut copy = scene;
+    copy["id"] = json!("valley-2");
+    doc["scenes"].as_array_mut().unwrap().push(copy);
+    load(doc);
+}
+
+#[test]
+fn unknown_scene() {
+    let errs = sequence_errors(&[("/sequences/0/_scene", json!("night"))]);
+    assert_error(&errs, "/sequences/0/_scene", "unknown scene \"night\"");
+}
+
+#[test]
+fn unknown_layer_fixture() {
+    let err = pixel_perfect::load_file(&common::fixture("invalid/sequence-unknown-layer.yaml"))
+        .unwrap_err();
+    assert_error(
+        err.diagnostics(),
+        "/sequences/0/actions/0/_layer",
+        "scene \"night\" has no layer with id \"lamp\"",
+    );
+}
+
+#[test]
+fn sequence_instant_action_after_the_end() {
+    let errs = sequence_errors(&[("/sequences/0/actions/2/at", json!(8))]);
+    assert_error(
+        &errs,
+        "/sequences/0/actions/2/at",
+        "at 8 is not inside the sequence (duration 8)",
+    );
+}
+
+#[test]
+fn sequence_movement_ending_at_the_loop_boundary() {
+    let mut doc = sequence_doc();
+    set(&mut doc, "/sequences/0/actions/0/start", json!(4));
+    set(&mut doc, "/sequences/0/actions/0/duration", json!(4));
+    load(doc);
+}
+
+#[test]
+fn sequence_movement_past_the_end() {
+    let errs = sequence_errors(&[
+        ("/sequences/0/actions/0/start", json!(5)),
+        ("/sequences/0/actions/0/duration", json!(4)),
+    ]);
+    assert_error(
+        &errs,
+        "/sequences/0/actions/0/duration",
+        "ends at 9, after the end of the sequence (8)",
+    );
+    let errs = sequence_errors(&[("/sequences/0/actions/0/start", json!(8))]);
+    assert_error(
+        &errs,
+        "/sequences/0/actions/0/start",
+        "start 8 is not inside the sequence",
+    );
+}
+
+#[test]
+fn overlapping_layer_movements() {
+    let mut doc = sequence_doc();
+    set(&mut doc, "/sequences/0/actions/0/duration", json!(4));
+    let second = json!({ "kind": "moveTo", "_layer": "far", "coordinates": [2, 1], "start": 2, "duration": 2 });
+    doc["sequences"][0]["actions"]
+        .as_array_mut()
+        .unwrap()
+        .push(second);
+    let errs = errors(doc);
+    assert_error(
+        &errs,
+        "/sequences/0/actions/4/start",
+        "moveTo on layer \"far\" starts at 2, while the moveTo at index 0 runs until 4",
+    );
+}
+
+#[test]
+fn duplicate_sequence_id_and_export() {
+    let mut doc = sequence_doc();
+    let copy = doc["sequences"][0].clone();
+    doc["sequences"].as_array_mut().unwrap().push(copy);
+    assert_error(
+        &errors(doc),
+        "/sequences/1/id",
+        "duplicate sequence id \"drift\"",
+    );
+    let errs = sequence_errors(&[("/exports", json!(["/sequences/nope"]))]);
+    assert_error(&errs, "/exports/0", "does not resolve");
+    let mut doc = sequence_doc();
+    doc["exports"] = json!(["/sequences/drift"]);
+    load(doc);
+}

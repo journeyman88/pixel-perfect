@@ -11,7 +11,9 @@
 use std::collections::HashMap;
 
 use crate::compose::{self, Placed, find_panel, find_scene, is_animated_panel};
-use crate::model::{ElementSource, Flipbook, Panel, Scene, Timeline, Transform, Transition};
+use crate::model::{
+    Action, ElementSource, Flipbook, Layer, Panel, Scene, Sequence, Timeline, Transform, Transition,
+};
 use crate::raster::{self, Image};
 use crate::render;
 use crate::semantic::ResolvedWorksheet;
@@ -23,7 +25,7 @@ pub const MAX_FRAMES: usize = (1 << 31) - 1;
 /// True if the resource is rendered as an animation.
 pub fn is_animated(ws: &ResolvedWorksheet, collection: &str, id: &str) -> bool {
     match collection {
-        "flipbooks" | "timelines" => true,
+        "flipbooks" | "timelines" | "sequences" => true,
         "panels" => find_panel(ws, id).is_some_and(is_animated_panel),
         "scenes" => find_scene(ws, id).is_some_and(|s| compose::is_animated_scene(ws, s)),
         _ => false,
@@ -36,6 +38,14 @@ fn find_flipbook<'a>(ws: &'a ResolvedWorksheet, id: &str) -> &'a Flipbook {
         .iter()
         .find(|f| f.id == id)
         .unwrap_or_else(|| panic!("unknown flipbook {id:?}"))
+}
+
+fn find_sequence<'a>(ws: &'a ResolvedWorksheet, id: &str) -> &'a Sequence {
+    ws.model
+        .sequences
+        .iter()
+        .find(|q| q.id == id)
+        .unwrap_or_else(|| panic!("unknown sequence {id:?}"))
 }
 
 fn find_timeline<'a>(ws: &'a ResolvedWorksheet, id: &str) -> &'a Timeline {
@@ -92,21 +102,10 @@ pub fn round_away(n: i128, d: i128) -> i128 {
     if n < 0 { -q } else { q }
 }
 
-/// Coordinates of the element `id` at frame-unit `t`, starting from `initial`.
-fn position(timeline: &Timeline, id: &str, initial: [i64; 2], t: u64) -> [i64; 2] {
-    let mut moves: Vec<(u64, u64, [i64; 2])> = timeline
-        .transitions
-        .iter()
-        .filter_map(|tr| match tr {
-            Transition::MoveTo {
-                element,
-                coordinates,
-                start,
-                duration,
-            } if element == id => Some((*start, *duration, *coordinates)),
-            _ => None,
-        })
-        .collect();
+/// Coordinates at frame-unit `t` of something starting at `initial` and moved
+/// by `moves`, as `(start, duration, target)`: the linear movement rule shared
+/// by timeline elements and sequence layers. Moves must not overlap.
+pub fn moved(mut moves: Vec<(u64, u64, [i64; 2])>, initial: [i64; 2], t: u64) -> [i64; 2] {
     moves.sort_by_key(|m| m.0);
     let mut p = initial;
     for (start, duration, p1) in moves {
@@ -125,6 +124,24 @@ fn position(timeline: &Timeline, id: &str, initial: [i64; 2], t: u64) -> [i64; 2
         return [step(0), step(1)];
     }
     p
+}
+
+/// Coordinates of the element `id` at frame-unit `t`, starting from `initial`.
+fn position(timeline: &Timeline, id: &str, initial: [i64; 2], t: u64) -> [i64; 2] {
+    let moves = timeline
+        .transitions
+        .iter()
+        .filter_map(|tr| match tr {
+            Transition::MoveTo {
+                element,
+                coordinates,
+                start,
+                duration,
+            } if element == id => Some((*start, *duration, *coordinates)),
+            _ => None,
+        })
+        .collect();
+    moved(moves, initial, t)
 }
 
 /// The state of every element of `panel` (same order as `panel.elements`) at
@@ -179,6 +196,74 @@ pub fn timeline_state(timeline: &Timeline, panel: &Panel, t: u64) -> Vec<Element
     states
 }
 
+// Sequences
+
+/// The state of one scene layer at a frame-unit of a sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayerState {
+    pub coordinates: [i64; 2],
+    pub z_index: i64,
+    pub visible: bool,
+}
+
+/// The state of every layer of `scene` (same order as `scene.layers`) at
+/// frame-unit `t` of `sequence`.
+pub fn sequence_state(sequence: &Sequence, scene: &Scene, t: u64) -> Vec<LayerState> {
+    let mut states: Vec<LayerState> = scene
+        .layers
+        .iter()
+        .map(|l| LayerState {
+            coordinates: l.coordinates,
+            z_index: l.z_index,
+            visible: l.visible,
+        })
+        .collect();
+    let index_of = |id: &str| {
+        scene
+            .layers
+            .iter()
+            .position(|l| l.id.as_deref() == Some(id))
+    };
+    for j in sequence.instant_order() {
+        let action = &sequence.actions[j];
+        if action.at().is_some_and(|at| at > t) {
+            break;
+        }
+        let Some(k) = index_of(action.layer()) else {
+            continue;
+        };
+        match *action {
+            Action::SetVisible { value, .. } => states[k].visible = value,
+            Action::MoveToZ { value, .. } => states[k].z_index = value,
+            Action::MoveTo { .. } => unreachable!("not an instant action"),
+        }
+    }
+    for (state, layer) in states.iter_mut().zip(&scene.layers) {
+        if let Some(id) = &layer.id {
+            let moves = sequence
+                .actions
+                .iter()
+                .filter(|a| a.layer() == id)
+                .filter_map(Action::movement)
+                .collect();
+            state.coordinates = moved(moves, layer.coordinates, t);
+        }
+    }
+    states
+}
+
+/// True if `layer` can be drawn during `sequence`: it starts visible, or a
+/// `setVisible` makes it visible.
+fn drawable(sequence: &Sequence, layer: &Layer) -> bool {
+    layer.visible
+        || layer.id.as_deref().is_some_and(|id| {
+            sequence
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::SetVisible { layer, value: true, .. } if layer == id))
+        })
+}
+
 // Resources
 
 #[derive(Debug, Clone, Copy)]
@@ -187,6 +272,7 @@ enum Kind<'a> {
     Panel(&'a Panel),
     Timeline(&'a Timeline, &'a Panel),
     Scene(&'a Scene),
+    Sequence(&'a Sequence, &'a Scene),
 }
 
 /// Errors found while setting up the time model of a resource.
@@ -250,6 +336,12 @@ impl<'a> Kind<'a> {
                     layer.rates(ws, out);
                 }
             }
+            Kind::Sequence(q, s) => {
+                out.push(q.fps);
+                for layer in sequence_layer_kinds(ws, q, s).into_iter().flatten() {
+                    layer.rates(ws, out);
+                }
+            }
         }
     }
 
@@ -266,6 +358,12 @@ impl<'a> Kind<'a> {
                 .into_iter()
                 .flatten()
                 .try_fold(1, |acc, k| time::lcm(acc, k.loop_len(ws, clock)?)),
+            Kind::Sequence(q, s) => sequence_layer_kinds(ws, q, s)
+                .into_iter()
+                .flatten()
+                .try_fold(ticks(q.duration, q.fps)?, |acc, k| {
+                    time::lcm(acc, k.loop_len(ws, clock)?)
+                }),
         }
     }
 
@@ -273,17 +371,23 @@ impl<'a> Kind<'a> {
         match self {
             Kind::Flipbook(fb) => (fb.width, fb.height),
             Kind::Panel(p) | Kind::Timeline(_, p) => (p.width, p.height),
-            Kind::Scene(s) => (s.width, s.height),
+            Kind::Scene(s) | Kind::Sequence(_, s) => (s.width, s.height),
         }
     }
 }
 
-/// The animated kind of each scene layer, `None` for static panel layers.
-fn layer_kinds<'a>(ws: &'a ResolvedWorksheet, scene: &'a Scene) -> Vec<Option<Kind<'a>>> {
+/// The animated kind of each scene layer that `drawn` accepts, `None` for
+/// static panel layers and layers that are never drawn.
+fn layer_kinds_where<'a>(
+    ws: &'a ResolvedWorksheet,
+    scene: &'a Scene,
+    drawn: impl Fn(&Layer) -> bool,
+) -> Vec<Option<Kind<'a>>> {
     scene
         .layers
         .iter()
         .map(|layer| match (&layer.panel, &layer.timeline) {
+            _ if !drawn(layer) => None,
             (Some(p), _) => {
                 let panel = find_panel(ws, p).expect("validated reference");
                 is_animated_panel(panel).then_some(Kind::Panel(panel))
@@ -296,6 +400,22 @@ fn layer_kinds<'a>(ws: &'a ResolvedWorksheet, scene: &'a Scene) -> Vec<Option<Ki
             (None, None) => unreachable!("schema requires _panel or _timeline"),
         })
         .collect()
+}
+
+/// The animated kind of each layer of the scene of a sequence: layers that a
+/// `setVisible` can show count even if they start hidden.
+fn sequence_layer_kinds<'a>(
+    ws: &'a ResolvedWorksheet,
+    sequence: &'a Sequence,
+    scene: &'a Scene,
+) -> Vec<Option<Kind<'a>>> {
+    layer_kinds_where(ws, scene, |l| drawable(sequence, l))
+}
+
+/// The animated kind of each layer of a plain scene: hidden layers are never
+/// drawn there.
+fn layer_kinds<'a>(ws: &'a ResolvedWorksheet, scene: &'a Scene) -> Vec<Option<Kind<'a>>> {
+    layer_kinds_where(ws, scene, |l| l.visible)
 }
 
 /// Ticks of one period of a flipbook played from tick 0.
@@ -401,6 +521,26 @@ fn timeline_periodic(
     Ok(Periodic::new(period, events))
 }
 
+/// Ticks of one loop of a sequence at which a layer state can change.
+fn sequence_periodic(sequence: &Sequence, clock: u64, limit: usize) -> Result<Periodic, Exceeded> {
+    let u = clock / u64::from(sequence.fps);
+    let mut events = vec![0];
+    for action in &sequence.actions {
+        match action.movement() {
+            Some((start, duration, _)) => {
+                for t in start + 1..=(start + duration).min(sequence.duration - 1) {
+                    events.push(t * u);
+                    if events.len() > limit {
+                        return Err(Exceeded);
+                    }
+                }
+            }
+            None => events.extend(action.at().map(|at| at * u)),
+        }
+    }
+    Ok(Periodic::new(sequence.duration * u, events))
+}
+
 impl<'a> Kind<'a> {
     fn periodics(
         self,
@@ -419,6 +559,12 @@ impl<'a> Kind<'a> {
             Kind::Timeline(t, p) => out.push(timeline_periodic(ws, t, p, clock, limit)?),
             Kind::Scene(s) => {
                 for kind in layer_kinds(ws, s).into_iter().flatten() {
+                    kind.periodics(ws, clock, limit, out)?;
+                }
+            }
+            Kind::Sequence(q, s) => {
+                out.push(sequence_periodic(q, clock, limit)?);
+                for kind in sequence_layer_kinds(ws, q, s).into_iter().flatten() {
                     kind.periodics(ws, clock, limit, out)?;
                 }
             }
@@ -552,6 +698,7 @@ impl<'a> Kind<'a> {
                     .layers
                     .iter()
                     .zip(kinds)
+                    .filter(|(layer, _)| layer.visible)
                     .map(|(layer, kind)| Drawn {
                         image: match (kind, &layer.panel) {
                             (Some(kind), _) => kind.render(ws, clock, tick, cache),
@@ -562,6 +709,31 @@ impl<'a> Kind<'a> {
                         z_index: layer.z_index,
                     })
                     .collect();
+                flatten_drawn(scene.width, scene.height, &drawn)
+            }
+            Kind::Sequence(sequence, scene) => {
+                let u = clock / u64::from(sequence.fps);
+                let local = tick % (sequence.duration * u);
+                let states = sequence_state(sequence, scene, local / u);
+                let kinds = sequence_layer_kinds(ws, sequence, scene);
+                let mut drawn = Vec::new();
+                for ((layer, kind), state) in scene.layers.iter().zip(kinds).zip(states) {
+                    if !state.visible {
+                        continue;
+                    }
+                    // Animated layers run on the global time, not the
+                    // sequence's local time.
+                    let image = match (kind, &layer.panel) {
+                        (Some(kind), _) => kind.render(ws, clock, tick, cache),
+                        (None, Some(p)) => cache.static_panel(ws, p),
+                        (None, None) => unreachable!("timeline layers are animated"),
+                    };
+                    drawn.push(Drawn {
+                        image,
+                        coordinates: state.coordinates,
+                        z_index: state.z_index,
+                    });
+                }
                 flatten_drawn(scene.width, scene.height, &drawn)
             }
         }
@@ -583,6 +755,13 @@ impl<'a> Animation<'a> {
                 )
             }
             "scenes" => Kind::Scene(find_scene(ws, id).expect("validated reference")),
+            "sequences" => {
+                let sequence = find_sequence(ws, id);
+                Kind::Sequence(
+                    sequence,
+                    find_scene(ws, &sequence.scene).expect("validated reference"),
+                )
+            }
             other => unreachable!("{other} are not animated"),
         };
         let mut rates = Vec::new();

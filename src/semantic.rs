@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::error::Diagnostic;
 use crate::model::{
-    Element, ElementSource, Panel, Rotation, Timeline, Transform, Transition, Worksheet,
+    Element, ElementSource, Panel, Rotation, Sequence, Timeline, Transform, Transition, Worksheet,
 };
 use crate::resolve::{self, ResolvedPalette, ResolvedSprite};
 
@@ -89,6 +89,31 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
         |i| format!("/scenes/{i}/id"),
         &mut diagnostics,
     );
+    check_unique(
+        ws.sequences.iter().map(|s| s.id.as_str()),
+        "sequence",
+        |i| format!("/sequences/{i}/id"),
+        &mut diagnostics,
+    );
+    for (i, scene) in ws.scenes.iter().enumerate() {
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        for (j, layer) in scene.layers.iter().enumerate() {
+            let Some(id) = layer.id.as_deref() else {
+                continue;
+            };
+            if let Some(first) = seen.get(id) {
+                diagnostics.push(Diagnostic::at(
+                    format!("/scenes/{i}/layers/{j}/id"),
+                    format!(
+                        "duplicate layer id {id:?} in scene {:?} (first defined at index {first})",
+                        scene.id
+                    ),
+                ));
+            } else {
+                seen.insert(id, j);
+            }
+        }
+    }
     for (p, panel) in ws.panels.iter().enumerate() {
         let element_ids: Vec<(usize, &str)> = panel
             .elements
@@ -115,6 +140,7 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
     let panels = index_by_id(&ws.panels, |p| p.id.as_str());
     let timelines = index_by_id(&ws.timelines, |t| t.id.as_str());
     let scenes = index_by_id(&ws.scenes, |s| s.id.as_str());
+    let sequences = index_by_id(&ws.sequences, |s| s.id.as_str());
 
     // References.
     let mut reference = |index: &HashMap<&str, usize>, kind: &str, id: &str, pointer: String| {
@@ -241,6 +267,27 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
         }
     }
 
+    for (i, q) in ws.sequences.iter().enumerate() {
+        check_sequence_ranges(i, q, &mut diagnostics);
+        let Some(&sc) = scenes.get(q.scene.as_str()) else {
+            diagnostics.push(Diagnostic::at(
+                format!("/sequences/{i}/_scene"),
+                format!("unknown scene {:?}", q.scene),
+            ));
+            continue;
+        };
+        let scene = &ws.scenes[sc];
+        for (j, action) in q.actions.iter().enumerate() {
+            let layer = action.layer();
+            if !scene.layers.iter().any(|l| l.id.as_deref() == Some(layer)) {
+                diagnostics.push(Diagnostic::at(
+                    format!("/sequences/{i}/actions/{j}/_layer"),
+                    format!("scene {:?} has no layer with id {layer:?}", scene.id),
+                ));
+            }
+        }
+    }
+
     // Palettes: unique characters within one `colors` array, then inheritance.
     for (i, p) in ws.palettes.iter().enumerate() {
         let mut seen: HashMap<char, usize> = HashMap::new();
@@ -309,6 +356,7 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
             "panels" => panels.contains_key(id),
             "timelines" => timelines.contains_key(id),
             "scenes" => scenes.contains_key(id),
+            "sequences" => sequences.contains_key(id),
             _ => false,
         };
         if !found {
@@ -330,56 +378,53 @@ pub fn check(ws: Worksheet) -> Result<ResolvedWorksheet, Vec<Diagnostic>> {
     }
 }
 
-/// Checks that transitions stay inside the timeline and that `moveTo` on the
-/// same element do not overlap.
-fn check_transition_ranges(i: usize, t: &Timeline, diagnostics: &mut Vec<Diagnostic>) {
-    let pointer = |j: usize, field: &str| format!("/timelines/{i}/transitions/{j}/{field}");
+/// One timed change of a timeline or a sequence, for the range checks.
+struct Timed<'a> {
+    target: &'a str,
+    /// `(start, duration)` of a `moveTo`.
+    movement: Option<(u64, u64)>,
+    at: Option<u64>,
+}
+
+/// Checks that timed changes stay inside the loop (`total` frame-units of a
+/// `what`, e.g. "timeline") and that `moveTo` on the same target (a `noun`,
+/// e.g. "element") do not overlap. `pointer(j, field)` locates a field.
+fn check_ranges<'a>(
+    items: impl Iterator<Item = Timed<'a>>,
+    total: u64,
+    (what, noun): (&str, &str),
+    pointer: impl Fn(usize, &str) -> String,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let mut moves: BTreeMap<&str, Vec<(u64, u64, usize)>> = BTreeMap::new();
-    for (j, transition) in t.transitions.iter().enumerate() {
-        match *transition {
-            Transition::MoveTo {
-                ref element,
-                start,
-                duration,
-                ..
-            } => {
-                if start >= t.duration {
-                    diagnostics.push(Diagnostic::at(
-                        pointer(j, "start"),
-                        format!(
-                            "start {start} is not inside the timeline (duration {})",
-                            t.duration
-                        ),
-                    ));
-                } else if start.saturating_add(duration) > t.duration {
-                    diagnostics.push(Diagnostic::at(
-                        pointer(j, "duration"),
-                        format!(
-                            "the movement ends at {}, after the end of the timeline ({})",
-                            start.saturating_add(duration),
-                            t.duration
-                        ),
-                    ));
-                }
-                moves
-                    .entry(element.as_str())
-                    .or_default()
-                    .push((start, duration, j));
+    for (j, item) in items.enumerate() {
+        if let Some((start, duration)) = item.movement {
+            if start >= total {
+                diagnostics.push(Diagnostic::at(
+                    pointer(j, "start"),
+                    format!("start {start} is not inside the {what} (duration {total})"),
+                ));
+            } else if start.saturating_add(duration) > total {
+                diagnostics.push(Diagnostic::at(
+                    pointer(j, "duration"),
+                    format!(
+                        "the movement ends at {}, after the end of the {what} ({total})",
+                        start.saturating_add(duration),
+                    ),
+                ));
             }
-            _ => {
-                if let Some(at) = transition.at().filter(|&at| at >= t.duration) {
-                    diagnostics.push(Diagnostic::at(
-                        pointer(j, "at"),
-                        format!(
-                            "at {at} is not inside the timeline (duration {})",
-                            t.duration
-                        ),
-                    ));
-                }
-            }
+            moves
+                .entry(item.target)
+                .or_default()
+                .push((start, duration, j));
+        } else if let Some(at) = item.at.filter(|&at| at >= total) {
+            diagnostics.push(Diagnostic::at(
+                pointer(j, "at"),
+                format!("at {at} is not inside the {what} (duration {total})"),
+            ));
         }
     }
-    for (element, mut list) in moves {
+    for (target, mut list) in moves {
         list.sort_by_key(|&(start, _, _)| start);
         for pair in list.windows(2) {
             let ((s0, d0, j0), (s1, _, j1)) = (pair[0], pair[1]);
@@ -387,13 +432,51 @@ fn check_transition_ranges(i: usize, t: &Timeline, diagnostics: &mut Vec<Diagnos
                 diagnostics.push(Diagnostic::at(
                     pointer(j1, "start"),
                     format!(
-                        "moveTo on element {element:?} starts at {s1}, while the moveTo at index {j0} runs until {}",
+                        "moveTo on {noun} {target:?} starts at {s1}, while the moveTo at index {j0} runs until {}",
                         s0.saturating_add(d0)
                     ),
                 ));
             }
         }
     }
+}
+
+/// Checks that transitions stay inside the timeline and that `moveTo` on the
+/// same element do not overlap.
+fn check_transition_ranges(i: usize, t: &Timeline, diagnostics: &mut Vec<Diagnostic>) {
+    let items = t.transitions.iter().map(|tr| Timed {
+        target: tr.element(),
+        movement: match *tr {
+            Transition::MoveTo {
+                start, duration, ..
+            } => Some((start, duration)),
+            _ => None,
+        },
+        at: tr.at(),
+    });
+    check_ranges(
+        items,
+        t.duration,
+        ("timeline", "element"),
+        |j, field| format!("/timelines/{i}/transitions/{j}/{field}"),
+        diagnostics,
+    );
+}
+
+/// The same checks for the actions of a sequence.
+fn check_sequence_ranges(i: usize, q: &Sequence, diagnostics: &mut Vec<Diagnostic>) {
+    let items = q.actions.iter().map(|a| Timed {
+        target: a.layer(),
+        movement: a.movement().map(|(start, duration, _)| (start, duration)),
+        at: a.at(),
+    });
+    check_ranges(
+        items,
+        q.duration,
+        ("sequence", "layer"),
+        |j, field| format!("/sequences/{i}/actions/{j}/{field}"),
+        diagnostics,
+    );
 }
 
 /// Checks every `crop` that `appendTransforms` can add to the elements of a

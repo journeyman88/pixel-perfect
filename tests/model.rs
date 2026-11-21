@@ -161,3 +161,53 @@ fn transform_and_transition_descriptions_are_ignored() {
     assert_eq!(transitions(&annotated).len(), 6);
     assert_eq!(transitions(&annotated), transitions(&stripped));
 }
+
+#[test]
+fn sequence_fixture_loads_the_same_in_every_format() {
+    use pixel_perfect::Format;
+    use pixel_perfect::model::Action;
+    let yaml = std::fs::read_to_string(common::fixture("valid/sequence.yaml")).unwrap();
+    let value = pixel_perfect::input::parse(&yaml, Format::Yaml).unwrap();
+    let json = serde_json::to_string_pretty(&value).unwrap();
+    let toml = toml::to_string(&value).unwrap();
+    let models: Vec<_> = [
+        (yaml.as_str(), Format::Yaml),
+        (&json, Format::Json),
+        (&toml, Format::Toml),
+    ]
+    .into_iter()
+    .map(|(text, format)| pixel_perfect::load_str(text, format).unwrap().model)
+    .collect();
+    assert_eq!(models[0], models[1]);
+    assert_eq!(models[1], models[2]);
+
+    let model = &models[0];
+    let seq = &model.sequences[0];
+    assert_eq!(
+        (seq.id.as_str(), seq.scene.as_str(), seq.fps, seq.duration),
+        ("drift", "valley", 4, 8)
+    );
+    assert_eq!(
+        seq.actions[0],
+        Action::MoveTo {
+            layer: "far".into(),
+            coordinates: [0, 1],
+            start: 0,
+            duration: 8
+        }
+    );
+    assert_eq!(
+        seq.actions[3],
+        Action::MoveToZ {
+            layer: "light".into(),
+            value: 5,
+            at: 6
+        }
+    );
+    assert_eq!(seq.instant_order(), vec![2, 3]);
+    let layers = &model.scenes[0].layers;
+    assert_eq!(layers[0].id, None);
+    assert!(layers[0].visible, "visible defaults to true");
+    assert_eq!(layers[3].id.as_deref(), Some("light"));
+    assert!(!layers[3].visible);
+}

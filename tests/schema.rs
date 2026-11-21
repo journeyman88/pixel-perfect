@@ -249,3 +249,56 @@ fn empty_or_non_string_description_is_rejected() {
         }
     }
 }
+
+fn sequence_doc() -> serde_json::Value {
+    let text = std::fs::read_to_string(common::fixture("valid/sequence.yaml")).unwrap();
+    pixel_perfect::input::parse(&text, pixel_perfect::Format::Yaml).unwrap()
+}
+
+#[test]
+fn sequence_fixture_is_valid() {
+    assert!(pixel_perfect::schema::validate(&sequence_doc()).is_empty());
+    let mut doc = sequence_doc();
+    doc["exports"] = json!(["/sequences/drift"]);
+    assert!(pixel_perfect::schema::validate(&doc).is_empty());
+}
+
+#[test]
+fn removed_action_kinds_are_rejected() {
+    for action in [
+        json!({ "kind": "appendTransforms", "_layer": "far", "transforms": [{ "kind": "flip", "axis": "x" }], "at": 1 }),
+        json!({ "kind": "seekFlipbook", "_layer": "far", "at": 1 }),
+        json!({ "kind": "resetTransforms", "_layer": "far", "at": 1 }),
+    ] {
+        let mut doc = sequence_doc();
+        set(&mut doc, "/sequences/0/actions/0", action);
+        let errors = pixel_perfect::schema::validate(&doc);
+        assert!(
+            errors
+                .iter()
+                .any(|d| d.to_string().starts_with("/sequences/0/actions/0/kind")),
+            "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn incomplete_actions_are_rejected() {
+    for (pointer, field) in [
+        ("/sequences/0/actions/0", "_layer"),
+        ("/sequences/0/actions/0", "coordinates"),
+        ("/sequences/0/actions/2", "at"),
+        ("/sequences/0/actions/3", "value"),
+    ] {
+        let mut doc = sequence_doc();
+        remove(&mut doc, &format!("{pointer}/{field}"));
+        assert_error_within(&errors(doc), pointer);
+    }
+}
+
+#[test]
+fn action_targets_layers_not_elements() {
+    let mut doc = sequence_doc();
+    set(&mut doc, "/sequences/0/actions/2/_element", json!("light"));
+    assert_error_within(&errors(doc), "/sequences/0/actions/2");
+}

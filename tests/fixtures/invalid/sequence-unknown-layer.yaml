@@ -1,0 +1,18 @@
+# The action targets layer "lamp", but the scene names its only layer "sky".
+palettes:
+  - id: p
+    colors:
+      - { char: a, rgba: [0, 0, 0] }
+sprites:
+  - { id: s, _palette: p, lines: ["a"] }
+panels:
+  - { id: bg, width: 1, height: 1, elements: [{ _sprite: s, coordinates: [0, 0] }] }
+scenes:
+  - { id: night, width: 1, height: 1, layers: [{ id: sky, _panel: bg, coordinates: [0, 0] }] }
+sequences:
+  - id: blink
+    _scene: night
+    fps: 1
+    duration: 2
+    actions:
+      - { kind: setVisible, _layer: lamp, value: false, at: 1 }

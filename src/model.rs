@@ -28,6 +28,8 @@ pub struct Worksheet {
     pub timelines: Vec<Timeline>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
+    #[serde(default)]
+    pub sequences: Vec<Sequence>,
     pub exports: Option<Vec<String>>,
 }
 
@@ -300,11 +302,7 @@ impl Timeline {
     /// Indices of the instant transitions in application order: by `at`, ties
     /// in array order.
     pub fn instant_order(&self) -> Vec<usize> {
-        let mut order: Vec<usize> = (0..self.transitions.len())
-            .filter(|&i| self.transitions[i].at().is_some())
-            .collect();
-        order.sort_by_key(|&i| self.transitions[i].at());
-        order
+        instant_order(&self.transitions, Transition::at)
     }
 }
 
@@ -322,6 +320,8 @@ pub struct Timeline {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Layer {
+    /// Target of sequence actions; unique inside the scene.
+    pub id: Option<String>,
     #[serde(rename = "_panel")]
     pub panel: Option<String>,
     #[serde(rename = "_timeline")]
@@ -330,6 +330,8 @@ pub struct Layer {
     pub coordinates: [i64; 2],
     #[serde(default)]
     pub z_index: i64,
+    #[serde(default = "default_true")]
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -339,4 +341,91 @@ pub struct Scene {
     pub width: u32,
     pub height: u32,
     pub layers: Vec<Layer>,
+}
+
+/// A change applied over time to a layer of a sequence's scene.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Action {
+    MoveTo {
+        #[serde(rename = "_layer")]
+        layer: String,
+        coordinates: [i64; 2],
+        start: u64,
+        duration: u64,
+    },
+    SetVisible {
+        #[serde(rename = "_layer")]
+        layer: String,
+        value: bool,
+        at: u64,
+    },
+    MoveToZ {
+        #[serde(rename = "_layer")]
+        layer: String,
+        value: i64,
+        at: u64,
+    },
+}
+
+impl Action {
+    /// Id of the scene layer this action targets.
+    pub fn layer(&self) -> &str {
+        match self {
+            Action::MoveTo { layer, .. }
+            | Action::SetVisible { layer, .. }
+            | Action::MoveToZ { layer, .. } => layer,
+        }
+    }
+
+    /// Frame-unit at which an instant action takes effect; `None` for `moveTo`.
+    pub fn at(&self) -> Option<u64> {
+        match *self {
+            Action::MoveTo { .. } => None,
+            Action::SetVisible { at, .. } | Action::MoveToZ { at, .. } => Some(at),
+        }
+    }
+
+    /// `(start, duration, coordinates)` of a `moveTo`.
+    pub fn movement(&self) -> Option<(u64, u64, [i64; 2])> {
+        match *self {
+            Action::MoveTo {
+                start,
+                duration,
+                coordinates,
+                ..
+            } => Some((start, duration, coordinates)),
+            _ => None,
+        }
+    }
+}
+
+/// A scene-level animation: actions applied to the layers of `_scene`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Sequence {
+    pub id: String,
+    pub description: Option<String>,
+    #[serde(rename = "_scene")]
+    pub scene: String,
+    pub fps: u32,
+    pub duration: u64,
+    pub actions: Vec<Action>,
+}
+
+impl Sequence {
+    /// Indices of the instant actions in application order: by `at`, ties in
+    /// array order.
+    pub fn instant_order(&self) -> Vec<usize> {
+        instant_order(&self.actions, Action::at)
+    }
+}
+
+/// Indices of the items with an `at`, ordered by `at` with ties in array
+/// order. Shared by timelines and sequences.
+pub fn instant_order<T>(items: &[T], at: impl Fn(&T) -> Option<u64>) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..items.len())
+        .filter(|&i| at(&items[i]).is_some())
+        .collect();
+    order.sort_by_key(|&i| at(&items[i])); // stable: ties keep array order
+    order
 }
