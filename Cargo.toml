@@ -27,7 +27,6 @@ foldhash = "0.2"
 image-webp = "0.2.4"
 jsonschema = { version = "0.61", default-features = false }
 notify = "8.2.1"
-notify-debouncer-full = "0.7.0"
 num_cpus = "1.17.0"
 png = "0.18"
 rayon = "1.12.0"

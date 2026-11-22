@@ -8,8 +8,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use notify::RecursiveMode;
-use notify_debouncer_full::{DebounceEventResult, new_debouncer};
+use notify::{RecursiveMode, Watcher};
 use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions, RenderReport};
 use pixel_perfect::import::{self, ImportError, ImportOptions};
 use pixel_perfect::{LoadError, ResolvedWorksheet, watch};
@@ -310,8 +309,13 @@ fn render(path: &Path, options: &RenderOptions) -> u8 {
     }
 }
 
-/// How long the watcher waits for a burst of file events to settle.
-const DEBOUNCE: Duration = Duration::from_millis(150);
+/// How long `watch` waits after a change for the next one, before rendering:
+/// a burst of changes gives a single render, after its last change.
+const QUIET: Duration = Duration::from_millis(150);
+
+/// The longest `watch` waits, from the first change of a burst, when the
+/// changes never pause: a file written without pause still renders this often.
+const MAX_WAIT: Duration = Duration::from_secs(2);
 
 /// The `watch` session: renders `path` and prints a summary line per render.
 struct WatchSession<'a> {
@@ -378,33 +382,26 @@ fn watch(path: &Path, options: &RenderOptions) -> u8 {
     };
     let (tx, rx) = mpsc::channel();
     let events = tx.clone();
-    let debouncer = new_debouncer(DEBOUNCE, None, move |result: DebounceEventResult| {
+    // Raw events: the watch loop does the debouncing (see `watch::run`).
+    let watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
         match result {
-            Ok(batch) => {
-                // Reading the worksheet, as every render does, gives access
-                // events: ignoring them keeps a render from triggering the next.
-                if batch
-                    .iter()
-                    .any(|e| !e.kind.is_access() && watch::concerns(&name, &e.paths))
-                {
-                    let _ = events.send(watch::Signal::Changed);
-                }
+            // Reading the worksheet, as every render does, gives access
+            // events: ignoring them keeps a render from triggering the next.
+            Ok(event) if !event.kind.is_access() && watch::concerns(&name, &event.paths) => {
+                let _ = events.send(watch::Signal::Changed);
             }
-            Err(errors) => {
-                for e in errors {
-                    eprintln!("watch: {e}");
-                }
-            }
+            Ok(_) => {}
+            Err(e) => eprintln!("watch: {e}"),
         }
     });
-    let mut debouncer = match debouncer {
-        Ok(d) => d,
+    let mut watcher = match watcher {
+        Ok(w) => w,
         Err(e) => {
             eprintln!("watch: cannot start the file watcher: {e}");
             return USAGE;
         }
     };
-    if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
+    if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
         eprintln!("{}: cannot watch: {e}", dir.display());
         return USAGE;
     }
@@ -421,6 +418,8 @@ fn watch(path: &Path, options: &RenderOptions) -> u8 {
     }
     watch::run(
         &rx,
+        QUIET,
+        MAX_WAIT,
         &mut WatchSession {
             path,
             options,
