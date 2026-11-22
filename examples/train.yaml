@@ -1,0 +1,1236 @@
+# A steam train crossing the countryside, 256x256, animated.
+#
+#   pixel-perfect render examples/train.yaml -o out --scale 3
+#
+# Writes one APNG file that loops forever:
+#
+# - sequences/ride.png (256x256): a train traveling to the right, seen by
+#   a camera that travels with it, 8 s.
+#
+# The scene `countryside` stacks seven layers. Four of them are the planes
+# of the picture. The train stays still in the middle of the canvas and
+# everything else scrolls left, faster the nearer it is:
+#
+# 1. foreground: the train, a timeline layer that bounces in place, over
+#    the track, which scrolls left by 6 px per frame-unit;
+# 2. near background: telephone poles and their wires, scrolling left by 4,
+#    which give the sense of speed;
+# 3. far background: city buildings, scrolling left by 1;
+# 4. very far background: a snowy mountain over a hazy plain, still, at
+#    the distance where the parallax vanishes.
+#
+# The sky and a field behind the poles are static and plain enough (only
+# horizontal bands) that they do not give the camera away. What it shows:
+#
+# - parallax with `moveTo`: each scrolling plane is a panel made with one
+#   `tile`, moved by a whole number of tiles per loop (1x128, 4x128 and
+#   16x48 pixels), so it loops seamlessly;
+# - an animated layer in a sequence: `rumble` keeps its own 0.5 s rhythm
+#   while `ride` scrolls the planes around it;
+# - bouncing: in `rumble` the locomotive, the tender and the coach each
+#   rise by one pixel for 2 frame-units, one after the other, as if they
+#   rolled over a rail joint. The wheels stay on the rail;
+# - flipbooks as elements: spoked wheels turning (3 frames each) and a
+#   trail of semi-transparent smoke (3 frames), all on the same 16 fps
+#   clock as the timeline and the sequence.
+$schema: ../schema/worksheet.schema.json
+
+palettes:
+  - id: sky
+    colors:
+      - { char: "1", rgba: [62, 108, 182] }  # sky, top
+      - { char: "2", rgba: [80, 130, 198] }
+      - { char: "3", rgba: [104, 154, 210] }
+      - { char: "4", rgba: [132, 178, 220] }
+      - { char: "5", rgba: [164, 200, 228] }
+      - { char: "6", rgba: [196, 216, 230] }
+      - { char: "7", rgba: [224, 226, 220] }  # sky, horizon
+  # Very far: low contrast, close to the sky.
+  - id: mountain
+    colors:
+      - { char: "M", rgba: [146, 160, 198] }  # rock, lit
+      - { char: "m", rgba: [120, 132, 178] }  # rock, shadow
+      - { char: "S", rgba: [238, 242, 250] }  # snow, lit
+      - { char: "s", rgba: [196, 206, 230] }  # snow, shadow
+      - { char: "h", rgba: [166, 186, 212] }  # haze
+      - { char: "f", rgba: [132, 158, 170] }  # foothills, crest
+      - { char: "F", rgba: [118, 146, 156] }  # foothills
+      - { char: "p", rgba: [146, 170, 158] }  # plain
+      - { char: "q", rgba: [134, 160, 146] }  # plain, nearer
+  - id: city
+    colors:
+      - { char: "b", rgba: [138, 154, 182] }  # back row
+      - { char: "B", rgba: [120, 136, 168] }  # back row, shaded side
+      - { char: "G", rgba: [176, 196, 220] }  # back row, window
+      - { char: "D", rgba: [110, 124, 156] }  # back row, dark window
+      - { char: "c", rgba: [110, 124, 156] }  # front row
+      - { char: "C", rgba: [92, 104, 138] }  # front row, shaded side
+      - { char: "g", rgba: [168, 190, 216] }  # front row, window
+      - { char: "d", rgba: [78, 90, 120] }  # front row, dark window
+  - id: field
+    colors:
+      - { char: "a", rgba: [128, 162, 104] }  # far edge
+      - { char: "b", rgba: [114, 154, 88] }
+      - { char: "c", rgba: [102, 146, 76] }
+      - { char: "d", rgba: [92, 136, 68] }
+      - { char: "e", rgba: [84, 126, 62] }  # near the track
+  - id: pole
+    colors:
+      - { char: "P", rgba: [104, 76, 54] }  # wood
+      - { char: "p", rgba: [138, 104, 74] }  # wood, lit
+      - { char: "Q", rgba: [70, 52, 38] }  # wood, shadow
+      - { char: "i", rgba: [200, 226, 214] }  # insulator
+      - { char: "w", rgba: [44, 44, 52] }  # wire
+  - id: track
+    colors:
+      - { char: "H", rgba: [214, 218, 224] }  # rail head
+      - { char: "h", rgba: [128, 132, 142] }  # rail
+      - { char: "k", rgba: [62, 62, 70] }  # rail web
+      - { char: "t", rgba: [104, 74, 50] }  # sleeper
+      - { char: "u", rgba: [70, 50, 36] }  # sleeper, shadow
+      - { char: "x", rgba: [156, 146, 134] }  # ballast
+      - { char: "y", rgba: [126, 118, 108] }
+      - { char: "z", rgba: [98, 92, 86] }
+      - { char: "l", rgba: [104, 148, 64] }  # grass, lit
+      - { char: "g", rgba: [74, 116, 50] }  # grass
+      - { char: "G", rgba: [58, 96, 42] }  # grass, nearest
+  - id: train
+    colors:
+      - { char: "L", rgba: [42, 96, 66] }  # livery green
+      - { char: "l", rgba: [70, 130, 90] }  # green, lit
+      - { char: "d", rgba: [26, 62, 44] }  # green, shadow
+      - { char: "B", rgba: [212, 172, 76] }  # brass, lining
+      - { char: "b", rgba: [250, 224, 140] }  # brass, highlight
+      - { char: "K", rgba: [30, 30, 36] }  # black
+      - { char: "k", rgba: [70, 70, 80] }  # black, lit
+      - { char: "R", rgba: [176, 44, 38] }  # red
+      - { char: "w", rgba: [255, 236, 150] }  # lamp
+      - { char: "G", rgba: [128, 170, 200] }  # glass
+      - { char: "g", rgba: [210, 230, 240] }  # glass, glare
+      - { char: "C", rgba: [126, 40, 46] }  # coach maroon
+      - { char: "c", rgba: [158, 62, 64] }  # maroon, lit
+      - { char: "D", rgba: [90, 28, 34] }  # maroon, shadow
+      - { char: "Y", rgba: [232, 214, 170] }  # cream
+      - { char: "O", rgba: [86, 86, 96] }  # roof
+      - { char: "o", rgba: [124, 124, 134] }  # roof, lit
+      - { char: "T", rgba: [64, 64, 72] }  # tyre
+      - { char: "t", rgba: [170, 170, 182] }  # tyre, lit
+      - { char: "V", rgba: [244, 244, 248, 0.9] }  # smoke
+      - { char: "v", rgba: [226, 226, 234, 0.55] }  # smoke, thin
+
+sprites:
+  # Dithered gradient, 2x256, widened with `tile`.
+  - id: sky
+    _palette: sky
+    lines:
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "11"
+      - "21"
+      - "11"
+      - "21"
+      - "11"
+      - "21"
+      - "12"
+      - "21"
+      - "12"
+      - "22"
+      - "12"
+      - "22"
+      - "12"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "22"
+      - "32"
+      - "22"
+      - "32"
+      - "22"
+      - "32"
+      - "23"
+      - "32"
+      - "23"
+      - "33"
+      - "23"
+      - "33"
+      - "23"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "33"
+      - "43"
+      - "33"
+      - "43"
+      - "34"
+      - "43"
+      - "34"
+      - "43"
+      - "34"
+      - "44"
+      - "34"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "44"
+      - "54"
+      - "44"
+      - "54"
+      - "45"
+      - "54"
+      - "45"
+      - "55"
+      - "45"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "55"
+      - "65"
+      - "55"
+      - "65"
+      - "56"
+      - "65"
+      - "56"
+      - "66"
+      - "56"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "66"
+      - "76"
+      - "66"
+      - "76"
+      - "67"
+      - "77"
+      - "67"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+      - "77"
+  # The mountain, the foothills and the plain: one still picture.
+  - id: mountain
+    _palette: mountain
+    lines:
+      - "................................................................................................................................................................................................................................................................"
+      - "................................................................................................................................................................................................................................................................"
+      - "................................................................................................................................................................................................................................................................"
+      - "................................................................................................................................................................................................................................................................"
+      - "................................................................................................................................................................................................................................................................"
+      - "................................................................................................................................................................................................................................................................"
+      - "............................................................................................................................S..................................................................................................................................."
+      - "............................................................................................................................S..................................................................................................................................."
+      - "..........................................................................................................................SSSS.................................................................................................................................."
+      - "........................................................................................................................S.SSSSSss..............................................................................................................................."
+      - "........................................................................................................................SSSSSSSSs.s............................................................................................................................."
+      - "........................................................................................................................SSSSSSssssss............................................................................................................................"
+      - ".......................................................................................................................SSSSSSssssssss..........................................................................................................................."
+      - ".......................................................................................................................SSSSSsssssssss..........................................................................................................................."
+      - ".......................................................................................................................SSSSSsssssssss..........................................................................................................................."
+      - "......................................................................................................................SSSSSSssssssssss.........................................................................................................................."
+      - "..................................................................................................................S..SSSSSssssssssssssss........................................................................................................................"
+      - "..................................................................................................................SSSSSSSsssssssssssssms........................................................................................................................"
+      - "...............................................................................................................SS.SSSSSSssssssssssssssms..ss...................................................................................................................."
+      - "...............................................................................................................SSSSSSSSSSSssssssssssssmmsmmssss................................................................................................................."
+      - "..............................................................................................................SSSSSSSSSSSSSsssssssssssmmsmmsssss................................................................................................................"
+      - "...........................................................................................................S..SSSSSSSSSSSsssssmmsssssmmmsmmsssss................................................................................................................"
+      - "...........................................................................................................SSSSSSSSSSSSSSSssssmmsssssmmmsmmsssssss.............................................................................................................."
+      - "...........................................................................................................SSSSSSSSSSSMSSsssssmmmssmsmmmmmmmsssssss............................................................................................................."
+      - "..........................................................................................................SSSSSSSSSSSSMSSssssmmmmssmsmmmmmmmsssssss............................................................................................................."
+      - "..........................................................................................................SSSSSSSSSSSSMSmssssmmmmssmmmmmmmmmsssssss............................................................................................................."
+      - ".....................................................................................................M.SSSSSMSSSSSSSSSmsmssssmmmmssmmmmmmmmmsmssssss............................................................................................................"
+      - "....................................................................................................MMSSSMSSMSSSSSSSSSMSmssssmmmmssmmmmmmmmmmmsmssss............................................................................................................"
+      - "..................................................................................................MMMMMMSMSSMSSMSSSMSMMsmssssmmmmsmmmmmmmmmmmmsmssss............................................................................................................"
+      - "................................................................................................MMMMMMMMSMSMMSSMSSSMSMmsmssssmmmmsmmmmmmmmmmmmsmsssss..........................................................................................................."
+      - "................................................................................................MMMMMMMMMMMMMSMMSSSMSMMMmsssmmmmmmmmmmmmmmmmmmsmmsssm..........................................................................................................."
+      - "................................................................................................MMMMMMMMMMMMMSMMSMSMSMMMMsssmmmmmmmmmmmmmmmmmmmmmsssmm.........................................................................................................."
+      - "...............................................................................................MMMMMMMMMMMMMMMMMSMMMMMMMmmssmmmmmmmmmmmmmmmmmmmmmsssmmm..mm....................................................................................................."
+      - "...............................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMssmmmmmmmmmmmmmmmmmmmmmmssmmm.mmm....................................................................................................."
+      - "..............................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMssmmmmmmmmmmmmmmmmmmmmmmssmmmmmmm....................................................................................................."
+      - "..............................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMssmmmmmmmmmmmmmmmmmmmmmmssmmmmmmmm...................................................................................................."
+      - ".............................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMmmssmmmmmmmmmmmmmmmmmmmmmmsmmmmmmmmm...................................................................................................."
+      - "...........................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..................................................................................................."
+      - "...........................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.m................................................................................................."
+      - "..........................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................................................................................................."
+      - "........................................................................................M.MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................................................................................................"
+      - "........................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...................................S..........................................................."
+      - "........................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..................................SSss........................................................"
+      - ".....................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................................SSsss........................................................"
+      - "....................................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...............................Sssssss......................................................."
+      - "...............................................................................M....MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.............................ssssssss......................................................"
+      - "...............................................................................M..MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..........................Ssssssssssm....................................................."
+      - "..............................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.........................SSsssssssmm..mm................................................."
+      - ".............................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm........................Ssssssssmsmmmmmmmms.............................................."
+      - "............................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm......................SSSSssssssmsmmmmmmmms.............................................."
+      - "............................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.....................SSSSssssssmmmmmmmmmmm.............................................."
+      - "..........................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...............MM..MSSSssssssmmmmmmmmmmmmm............................................."
+      - "..........................................................................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..............MMMSMSSSSSssssmmmmmmmmmmmmmm............................................"
+      - "...........................................S.ss.........................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..............MMMSMSSSSSssssmmmmmmmmmmmmmmm..........................................."
+      - "...........................................SSsss........................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm............SMMMMMSSSSsssssmmmmmmmmmmmmmmm..........................................."
+      - "...........................................SSsss......................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...........MMMMMMMMSSSmmsssmmmmmmmmmmmmmmmss........................................."
+      - "..........................................SSSssss.mm.................MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm........MMMMMMMMMSSSMmmsmmmmmmmmmmmmmmmmss.s......................................."
+      - ".........................................MSSsmsss.mm...............M.MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.......MMMMMMMMMMMsmmmmmmmmmmmmmmmmmmmmmsssm......................................"
+      - ".........................................MSSSMsssmmmm..............MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm......MMMMMMMMMMMMSMmmmmmmmmmmmmmmmmmmmmssmm......................................"
+      - ".........................................MSMsmmssmmmmm............MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm....MMMMMMMMMMMMMsmmmmmmmmmmmmmmmmmmmmmssmmm....................................."
+      - "...................................S....MMSMSmmssmmmmm..m.........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMSmmmmmmmmmmmmmmmmmmmmmssmmm....................................."
+      - "..................................MSS...MMSMMMmsmmmmmmmmmm.......MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmsmmmm...................................."
+      - "...........................SS...MMMSSMMMMMSMmmmsmmmmmmmmmm..mm...MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmsmmmm...................................."
+      - "..........................MSSMMMMMMMSMMMMMMMMmmsmmmmmmmmmmmmmm..MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.mmm.............................."
+      - "..........................MSSMMMMMMMSMMMMMMMmmmmmmmmmmmmmmmmmm..MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.............................."
+      - ".........................MMSMMMMMMMMSMMMMMMMMmmmmmmmmmmmmmmmmmm.MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.............................."
+      - "........................MMMMMMMMMMMMSMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm............................."
+      - ".......................MMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm............................"
+      - ".......................MMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm............................"
+      - ".......................MMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..m........................"
+      - ".....................MMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.mmmmmm...................."
+      - ".....................MMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...................."
+      - ".....................MMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..................."
+      - "....................MMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................."
+      - "...............M....MMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................."
+      - "...............MM..MMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm................"
+      - "............MM.MMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm...m............"
+      - "............MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..mm............"
+      - "...........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.m.........."
+      - "..........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.........."
+      - "..........MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm........."
+      - "........M.MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm......."
+      - "......MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.mm.m.."
+      - "......MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm.."
+      - "......MMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMmmhmmmhmmmhmmmhmmmhmmMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhMMMhMMMhMMMhMmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhm.."
+      - "....MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+      - ".M.MMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhmmmhmmmhmmmhmmmhmmmhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmMhMMMhMMMhMMMhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhm"
+      - "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmMMMMMMMMMMMMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhm"
+      - "MhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMmmhmmmhmmmhmmmhmmmhmMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhMMMhMMMhMMMhMmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhfm"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmfmhmfm"
+      - "MMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMmhmmmhmmmhmmmhmmmhmmmhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMMhMMfhMMMhMMMhMMMhMmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmMMhMMMhMMMhMMmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmmmhmfffffff"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhfffhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhfffffffFf"
+      - "MhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMhfhMfffMhMhMhMhMfffffffMfffffffMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhfhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmfffFfffFf"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMhMfffffffMffhMhfffffFfffhfffffffhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhffffmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmfffFFFFFFF"
+      - "MhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMffffffffffffffffffFFFfffffffffffhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhffffffmhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmhmffFFFFFFFFF"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhMffFffFFFfffffffffFFFFFFFfFFFFFFFfmhmhmhmhmhmhmhmhmhmhfhmfffmhffmhfffFfffffhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmfffmhmhmhmhmhmhmhmhmhmhmhmhmhmhmfffFFFFFFFFF"
+      - "MhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMhffFFFFFFFfFFfffFFFFFFFFFfFFFFFFFffmhfhmhmfmhmhmhmhmhmffhffffffffmffFFFFfffffmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhmhmhmhmfmhmhmfffffmhmhmhmhmhmhmhmhmhmhmhmhmhmfffFFFFFFFFFF"
+      - "hMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhMhMfffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffmhmfffmhmhmhmhfffffffffffffffFFFFFFffffffffhmhmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhmhmfmhmhfffffffffffhmhmhmhmhmhmhmhmhmhmhmhmhmhffFFFFFFFFFFF"
+      - "MhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhMhmhmhmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhMhffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffffffffffmhffmffffFffFFFffFFffFFFFFFFFFfffffffhmhmhmhmhmhmhmhmhmhMhMhMhMhmhmhmhmhmhmhmfffffffffffffFFFfffmfffmhmhmhmhmhmhmhmhmffhmfFFFFFFFFFFFF"
+      - "hhhMhhhMhhhMhhhMhhhMhhhMhhhMfhfMhhhMhfhmhhhmhhhmhhhmhhhmhhhmhhhMhhhMhhhMhfffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffFffffFfffffffffffFFfFFFFFFFFfFFFFFFFFFFFffffffhhhmhhhmhhhmhhhmhhhMhhhMhhhmhhhmhhhmhhhffffffFfffffFFFFFfffffffmfffmhhhmhhhmhhfffffFFFFFFFFFFFFF"
+      - "MhMhMhMhMhMhMhMhMhMhMhMhMfMffffhfhffffffmfmhmhmhmhmhmhmhmhmhmhmhMhMhMhMhffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffFFFffffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffmhmhmhmhmhmhmhmhMhMhMhMhMhmhmhmhmhmhffFffffFFFFFFFFFFFffffffffffffmhmhmhmhfffffffFFFFFFFFFFFFF"
+      - "fMhhhMhhhMhhhMhhhfhhhMhfffffffffffffffffffhhhmhhhmhhhmhhhmhhhmhhhMhhhMhhffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffFFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffhhhmhhhmhhhmhhhMhhhMhhhMhhhmhhhmhhfmfFFFFFFFFFFFFFFFFFFFfFFFfffffffffffmfffffFFffFFFFFFFFFFFFF"
+      - "ffMhMhMhMhMhMfMffffhMhffffffFfFffffffFfffffhmhmhmhmhmhmhmhmhmhmhMhMhMhfffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffhmhmhmhmhmhmhmhMhMhMhMhmhmhmhfhmffffFFFFFFFFFFFFFFFFFFFFFFFFfFFFfffffffffffFFFFFFFFFFFFFFFFFF"
+      - "fffffhhhhhfffffffffffffffFfFFFFfFfFFFFFFfFfhhhhhhhhhhhhhhhhhhhhhhhhhffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfhhhhhhhhhhhhhhhhhhhhhhhhhhhhhffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffffffFFFFFFFFFFFFFFFFFFFF"
+      - "FfffffMhhffffffffFfffffFFFFFFFFFFFFFFFFFFFfffhmhhhmhhhmhhhmhhfmhhhffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffhhmhhhmhhhmhhhMhhhMhhhMhhhmfffffFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFfffffffffffFfFFFFfffFFFFFFFFFFFFFFFFFFFFFffffhffhfhhhhhhhhfffhffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffhfhfhhhhhhhhhhhhhhhhhhhhfffFffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFfffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffffffffmhhhffhhffffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffffffhmhhfffhhMhhffffhffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFfffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffffffhfffffffFffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfffffffffhffffffffhffffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfFFfFffffffffFFFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfFfFffffffffffffffffffffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffFFffFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFffffFFFfffffFFFFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFfFFFFFFFFfFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      - "qpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqp"
+      - "pqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpqpq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      - "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+  # Two rows of buildings; nothing crosses the edges, so it tiles.
+  - id: city
+    _palette: city
+    lines:
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - "................................................................................................................................"
+      - ".....................................BBBBBBBBBBBBBBBBB.........................................................................."
+      - ".....................................bbbbbbbbbbbbbbbBB.........................................................................."
+      - ".....................................bbbbbbbbbbbbbbbBB.........................................................................."
+      - ".....................................bbGGbbGGbbDDbbbBB.........................................................................."
+      - "........B............................bbGGbbGGbbDDbbbBB.........................................................................."
+      - "........B............................bbbbbbbbbbbbbbbBB.........................................................................."
+      - "........B............................bbbbbbbbbbbbbbbBB.........................................................................."
+      - "........B...............B............bbGGbbDDbbDDbbbBB.........................................................................."
+      - "........B...............B............bbGGbbDDbbDDbbbBB.........................................................................."
+      - "........B...............B............bbbbbbbbbbbbbbbBB.........................................................................."
+      - "..BBBBBBBBBBBB..........B............bbbbbbbbbbbbbbbBB.........................................................................."
+      - "..bbbbbbbbbbBB..........B............bbGGbbGGbbGGbbbBB.......................BBBBBBBBBBBBBBBBBBB................................"
+      - "..bbbbbbbbbbBB..........B............bbGGbbGGbbGGbbbBB............B..........bbbbbbbbbbbbbbbbbBB................................"
+      - "..bbGGbbGGbbBB.BBBBBBBBBBBBBBBBBBB...bbbbbbbbbbbbbbbBB............B..........bbbbbbbbbbbbbbbbbBB................................"
+      - "..bbGGbbGGbbBB.bbbbbbbbbbbbbbbbbBB...bbbbbbbbbbbbbbbBB............B..........bbGGbbGGbbGGbbDDbBB................................"
+      - "..bbbbbbbbbbBB.bbbbbbbbbbbbbbbbbBB...bbGGbbGGbbGGbbbBB............B..........bbGGbbGGbbGGbbDDbBB................................"
+      - "..bbbbbbbbbbBB.bbGGbbGGbbGGbbGGbBB...bbGGbbGGbbGGbbbBB............B..........bbbbbbbbbbbbbbbbbBB....BBBBBBBBBBBBBB.............."
+      - "..bbGGbbGGbbBB.bbGGbbGGbbGGbbGGbBB...bbbbbbbbbbbbbbbBB............B..........bbbbbbbbbbbbbbbbbBB....bbbbbbbbbbbbBB.............."
+      - "..bbGGbbGGbbBB.bbbbbbbbbbbbbbbbbBB...bbbbbbbbbbbbbbbBB.....BBBBBBBBBBBBBBB...bbGGbbGGbbGGbbDDbBB....bbbbbbbbbbbbBB.............."
+      - "..bbbbbbbbbbBB.bbbbbbbbbbbbbbbbbBB...bbGGbbGGbbDDbbbBB.....bbbbbbbbbbbbbBB...bbGGbbGGbbGGbbDDbBB....bbGGbbDDbbbbBB.............."
+      - "..bbbbbbbbbbBB.bbGGbbGGbbDDbbGGbBB...bbGGbbGGbbDDbbbBB.....bbbbbbbbbbbbbBB.CCCCCCCCCCCCCbbbbbbBB....bbGGbbDDbbbbBB.............."
+      - "..bbGGbbGGbbBB.bbGGbbGGbbDDbbGGbBB...bbbbbbbbbbbbbbbBB.....bbGGbbGGbbGGbBB.cccccccccccCCbbbbbbBB....bbbbbbbbbbbbBB.............."
+      - "..bbGGbbGGbbBB.bbbbbbbbbbbbbbbbbBB...bbbbbbbbbbbbbbbBB.....bbGGbbGGbbGGbBB.cccccccccccCCGbbGGbBB....bbbbbbbbbbbbBB.............."
+      - "..bbbbbbbbbbBB.bbbbbCCCCCCCCCCCCCCCCCCCGGbbGGbbGGbbbBB.....bbbbbbbbbbbbbBB.ccggccggcccCCGbbGGbBB....bbGGbbDDbbbbBB.............."
+      - "..bbbbbbbbbbBB.bbGGbcccccccccccccccccCCGGbbGGbbGGbbbBB.....bbbbbbbbbbbbbBB.ccggccggcccCCbbbbbbBB....bbGGbbDDbbbbBB.............."
+      - "..bbGGbbGGbbBB.bbGGbcccccccccccccccccCCbbbbbbbbbbbbbBB.....bbGGbbGGbbDDbBB.cccccccccccCCbbbbbbBB....bbbbbbbbbbbCCCCCCCCCCCCCCC.."
+      - "..bbGGbbGGbbBB.bbbbbccddccggccggccggcCCbbbbbCCCCCCCCCCCC...bbGGbbGGbbDDbBB.cccccccccccCCGbbGGbBB....bbbbbbbbbbbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbbbbccddccggccggccggcCCDDbbGccccccccccCC...bbbbbbbbbbbbbBB.ccddccggcccCCGbbGGbBB....bbDDbbDDbbbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbGGbcccccccccccccccccCCDDbbGccccccccccCC...bbbbbbbbbbbbbBB.ccddccggcccCCbbbbbbBB....bbDDbbDDbbbccggccddccggcCC.."
+      - "..bbGGbbGGbbBB.bbGGbcccccccccccccccccCCbbbbbccggccddccCC...bbDDbbDDbbDDbBB.cccccccccccCCbbbbbbBB....bbbbbbbbbbbccggccddccggcCC.."
+      - "..bbGGbbGGbbBB.bbbbbccggccggccddccggcCCbbbbbccggccddccCC...bbDDbbDDbbDDbBB.cccccccccccCCGbbGGbBB....bbbbbbbbbbbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbbbbccggccggccddccggcCCGGbbDccccccccccCC...bbbbbbbbbbbbbBB.ccggccggcccCCGbbGGbBB....bbGGbbGGbbbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbGGbcccccccccccccccccCCGGbbDccccccccccCC...bbbbbbbbbbbbbBB.ccggccggcccCCbbbbbbBB....bbGGbbGGbbbccggccggccddcCC.."
+      - "..bbGGbbDDbbBB.bbGGbcccccccccccccccccCCbbbbbccddccggccCC...bbGGbbGGbbGGbBB.cccccccccccCCbbCCCCCCCCCCCCCCCCCCCCbccggccggccddcCC.."
+      - "..bbGGbbDDbbBB.bbbbbccggccddccggccddcCCbbbbbccddccggccCC...bbGGbbGGbbGGbBB.cccccccccccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbbbbccggccddccggccddcCCDDbbGccccccccccCC...bbbbbbbbbbbbbBB.ccddccddcccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - "..bbbbbbbbbbBB.bbGGbcccccccccccccccccCCDDbbGccccccccccCC.CCCCCCCCCCCCCbbBB.ccddccddcccCCbbccddccddccggccddccCCbccggccddccggcCC.."
+      - ".CCCCCCCCCCCCCCCCCGbcccccccccccccccccCCbbbbbccddccggccCC.cccccccccccCCGbBB.cccccccccccCCbbccddccddccggccddccCCbccggccddccggcCC.."
+      - ".cccccccccccccccCCbbccddccggccggccggcCCbbbbbccddccggccCC.cccccccccccCCGbBB.cccccccccccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbccddccggccggccggcCCGGbbDccccccccccCC.ccggccddcccCCbbBB.ccddccddcccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".ccggccggccggcccCCGbcccccccccccccccccCCGGbbDccccccccccCC.ccggccddcccCCbbBB.ccddccddcccCCbbccggccggccddccddccCCbccddccggccggcCC.."
+      - ".ccggccggccggcccCCGbcccccccccccccccccCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCbbccggccggccddccddccCCbccddccggccggcCC.."
+      - ".cccccccccccccccCCbbccggccggccggccggcCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCDbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbccggccggccggccggcCCGGbbGccccccccccCC.ccggccggcccCCbbBB.ccggccggcccCCDbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".ccddccddccggcccCCDbcccccccccccccccccCCGGbbGccccccccccCC.ccggccggcccCCbbBB.ccggccggcccCCbbccggccddccggccggccCCbccddccggccddcCC.."
+      - ".ccddccddccggcccCCDbcccccccccccccccccCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCbbccggccddccggccggccCCbccddccggccddcCC.."
+      - ".cccccccccccccccCCbbccggccddccggccggcCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbccggccddccggccggcCCGGbbGccccccccccCC.ccddccddcccCCbbBB.ccggccggcccCCGbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".ccddccggccggcccCCGbcccccccccccccccccCCGGbbGccccccccccCC.ccddccddcccCCbbBB.ccggccggcccCCbbccddccddccggccggccCCbccddccddccggcCC.."
+      - ".ccddccggccggcccCCGbcccccccccccccccccCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCbbccddccddccggccggccCCbccddccddccggcCC.."
+      - ".cccccccccccccccCCbbccggccddccggccddcCCbbbbbccggccggccCC.cccccccccccCCGbBB.cccccccccccCCDbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbccggccddccggccddcCCGGbbGccccccccccCC.ccggccggcccCCbbBB.ccggccggcccCCDbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".ccddccggccggcccCCGbcccccccccccccccccCCGGbbGccccccccccCC.ccggccggcccCCbbBB.ccggccggcccCCbbccggccggccggccggccCCbccddccggccggcCC.."
+      - ".ccddccggccggcccCCGbcccccccccccccccccCCbbbbbccggccddccCC.cccccccccccCCGbBB.cccccccccccCCbbccggccggccggccggccCCbccddccggccggcCC.."
+      - ".cccccccccccccccCCbbcccccccccccccccccCCbbbbbccggccddccCC.cccccccccccCCGbBB.cccccccccccCCbbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbcccccccccccccccccCCbbbbbccccccccccCC.cccccccccccCCbbBB.cccccccccccCCbbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbcccccccccccccccccCCbbbbbccccccccccCC.cccccccccccCCbbBB.cccccccccccCCbbccccccccccccccccccCCbcccccccccccccCC.."
+      - ".cccccccccccccccCCbbcccccccccccccccccCCbbbbbccccccccccCC.cccccccccccCCbbBB.cccccccccccCCbbccccccccccccccccccCCbcccccccccccccCC.."
+  # One column of horizontal bands, widened with `tile`.
+  - id: field
+    _palette: field
+    lines:
+      - "a"
+      - "b"
+      - "b"
+      - "c"
+      - "c"
+      - "c"
+      - "c"
+      - "d"
+      - "d"
+      - "d"
+      - "d"
+      - "d"
+      - "d"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+      - "e"
+  # One pole and the wires to the next one, which is the same pole one tile to the right.
+  - id: pole
+    _palette: pole
+    lines:
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "...................QQQQQQ......................................................................................................."
+      - "....................pPPQ........................................................................................................"
+      - ".............i......pPPQ.......i................................................................................................"
+      - ".............i......pPPQ.......i................................................................................................"
+      - "...........PPPPPPPPPPPPPPPPPPPPPPP.............................................................................................."
+      - "........wwwQQQQQQQQQQQQQQQQQQQQQQQwwww.........................................................................................."
+      - "....wwwww......Q...wpPPQwww.Q........wwwww......................................................................................"
+      - "wwwww...........Q.wwpPPQwwwQ.............wwwww.................................................................................."
+      - "w............wwwwQw.pPPQ..Qwwwwww............wwwwww........................................................................wwwww"
+      - ".......wwwwwww....Q.pPPQ.Q......wwwwwww...........wwwwwww............................................................wwwwwww...."
+      - ".wwwwwww...........QpPPQQ.............wwwwwww...........wwwwwww................................................wwwwwww.........."
+      - "ww..................pPPQ....................wwwwwwww..........wwwwwwww..................................wwwwwwww..........wwwwww"
+      - "................i...pPPQ....i......................wwwwwwwwwwww......wwwwwwwwwwww............wwwwwwwwwwww......wwwwwwwwwwww....."
+      - "................i...pPPQ....i.................................wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww................"
+      - "..............PPPPPPPPPPPPPPPPP................................................................................................."
+      - "...........wwwQQQQQQQQQQQQQQQQQwwww............................................................................................."
+      - ".......wwwww.......wpPPQwww.......wwwww........................................................................................."
+      - "...wwwww.......wwwwwpPPQ..wwwww.......wwwww....................................................................................."
+      - "wwww......wwwwww....pPPQ......wwwwww......wwwwww..............................................................................ww"
+      - "....wwwwwww.........pPPQ...........wwwwwww.....wwwwwww..................................................................wwwwwww."
+      - "wwwww...............pPPQ.................wwwwwww.....wwwwwww......................................................wwwwwww.....ww"
+      - "....................pPPQ.......................wwwwwwww....wwwwwwww........................................wwwwwwww....wwwwwwww."
+      - "....................pPPQ..............................wwwwwwwwwwwwwwwwwwwwwwww..................wwwwwwwwwwwwwwwwwwwwwwww........"
+      - "....................pPPQ.........................................wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww..................."
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+      - "....................pPPQ........................................................................................................"
+  # Rail, sleepers, ballast and grass; 48 wide, three sleepers.
+  - id: track
+    _palette: track
+    lines:
+      - "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+      - "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      - "xxtttttttttuxyxyzytttttttttuzxxxxxtttttttttuxzzx"
+      - "zztttttttttuyyyzzytttttttttuzxyxxytttttttttuzzxz"
+      - "xyuuuuuuuuuuyyyxyyuuuuuuuuuuxxyxxyuuuuuuuuuuyyxx"
+      - "xyzxxzyyyyxxxxxxzxxyxxxzxzzzxxyyxzyxzzyxzyzyxxzy"
+      - "yxzyzyxyxxyyyxyyxyxyzyyxzyyxxyxxzxxzxyxxzyyxyyzz"
+      - "xzxyyxzzxyzzzyxzzyyyzxxzxzyzzxzxxyxyzyyyzxxzxxzx"
+      - "yzxxzxyyxyyxxzyxxyxyyyxxxxzxyxzxyxzxyyzyzxyzxxyy"
+      - "yxyyxxxxlyyylyzzyxxlyzyzxzxzlyxyyxyyyxyyxylxxxyx"
+      - "lzlylzxygzzlgxyyzlzglyxzxylxgyzyyxxyyllxylgyllzz"
+      - "gxgzgylzgxxgglyxxgzgglxyylgxgzxyxzlxyggxyggzggyy"
+      - "gggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "ggggggggggggggggggggggggggggggglgggggggggggggggg"
+      - "ggggggggggggggggggggggggggglggggggggggggglgggggg"
+      - "ggggggggglglgggggggggggggggggggggggggggggggggggg"
+      - "gggggggggggggggggggggggggggggggggggggggggggggggg"
+      - "GGGGGGGGGGGGlGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+      - "GGGGGGGGGGGGGGGGGGGGGGGGGlGGGGGGGGGGGGGGGGGGGGGG"
+      - "GGGGGGGGGGGGGGGGGGGGGlGGGGGGGGGGGlGGGGGGGGGGGGGG"
+      - "GGGGGGGGGGGGGGlGGGGGGGGGGGGGGlGGGGGGGGlGGGGGlGGG"
+      - "lGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+      - "GGGGGGGlGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+      - "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+      - "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+  # Bodies, without wheels so that they can bounce on their own.
+  - id: coach
+    _palette: train
+    lines:
+      - "......oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo.........."
+      - "...OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO......."
+      - ".OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO....."
+      - "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK...."
+      - "cccDccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccDccc...."
+      - "cccDccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccDccc...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCYDYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYDYCC...."
+      - "CCYDYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYDYCC...."
+      - "CCYDYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYDYCC...."
+      - "CCYDYYGggGGGGYYYGggGGGGYYYGggGGGGYYYGggGGGGYYYGggGGGGYYYGggGGGGYYYGggGGGGYYYGggGGGGYDYCC...."
+      - "CCYDYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYYYGgGGGGGYDYCC...."
+      - "CCYDYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYDYCC...."
+      - "CCYDYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYDYCC...."
+      - "CCYDYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYDYCC...."
+      - "CCYDYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYYYGGGGGGGYDYCC...."
+      - "CCYDYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYDYCC...."
+      - "CCYDYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYDYCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "CCCDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDCCC...."
+      - "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDKKKK"
+      - "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDKKKK"
+      - "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD...."
+      - "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD...."
+      - "....KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK........"
+      - "....KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK........"
+      - "....KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK........"
+      - "......KKKKKKKKKKKKKKKKKKKKKKKKKK........................KKKKKKKKKKKKKKKKKKKKKKKKKK.........."
+      - "......KKKKKKKKKKKKKKKKKKKKKKKKKK........................KKKKKKKKKKKKKKKKKKKKKKKKKK.........."
+  - id: tender
+    _palette: train
+    lines:
+      - "................KKkKk.KKK..kk..................."
+      - ".........Kk.KKKKkkKkKKkKKkkKkKk.K..K............"
+      - "..KK..KKkKkKkKKKKKkKKkKkKKKKkKKKKKKKK.k.Kk......"
+      - "..KKKkKKkKKKKKkkKKKKkkKkKKkKkkkKkKkkKkKKKk......"
+      - "..KkkKkkKkKKKkkKkKkKKKKKkkkKKkKKKKKKKkKKKK......"
+      - "..KKKKkKkKKKKkKKKKKKkkKkkkkKKkKKKkKKKKKKKK......"
+      - "llllllllllllllllllllllllllllllllllllllllllll...."
+      - "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL...."
+      - "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL...."
+      - "LLLBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLL...."
+      - "LLLBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBLLLKKKK"
+      - "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLKKKK"
+      - "dddddddddddddddddddddddddddddddddddddddddddd...."
+      - "dddddddddddddddddddddddddddddddddddddddddddd...."
+      - "dddddddddddddddddddddddddddddddddddddddddddd...."
+      - ".KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK....."
+      - ".KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK....."
+      - ".KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK....."
+  - id: loco
+    _palette: train
+    lines:
+      - "...........................................................................kkkkkkkkk.........."
+      - "...........................................................................KKKKKKKKK.........."
+      - "............................................................................kKKKKKK..........."
+      - "............................................................................kKKKKKK..........."
+      - "............................................................................kKKKKKK..........."
+      - "............................................................................kKKKKKK..........."
+      - "............................................................................kKKKKKK..........."
+      - "............................................................................kKKKKKK..........."
+      - "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKK..............................................kKKKKKK..........."
+      - "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKK..............................................kKKKKKK..........."
+      - "..llllllllllllllllllllllllll................................................kKKKKKK..........."
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLL................................................kKKKKKK..........."
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLL........................bbbbbb..................kKKKKKK..........."
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLL.......................BbbBBBBB.................kKKKKKK..........."
+      - "..LLLLLKKKKKKKKKKKKKKKKLLLLL.....BBB...............BbbBBBBB.................kKKKKKK..........."
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLL.....BBB...............BBBBBBBB.................kKKKKKK..........."
+      - "..LLLLLKGggGGGGGGGGGGGKLLLLL.....BBB...............BBBBBBBB................KKKKKKKKKK........."
+      - "..LLLLLKGgGGGGGGGGGGGGKLLLLL.....BBB...............BBBBBBBB...............kkkkkkkkkkkk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLllllllllllllBlllllllllllllllllBlllllllllllllllKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLllllllllllllBlllllllllllllllllBlllllllllllllllKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLllllllllllllBlllllllllllllllllBlllllllllllllllKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLKGGGGGGGGGGGGGGKLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLKKKKKKKKKKKKKKKKLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBBBBBBBBBBBBBBBBBBBBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLLLBLLLLLLLLLLLLLLLKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLddddddddddddBdddddddddddddddddBdddddddddddddddKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLddddddddddddBdddddddddddddddddBdddddddddddddddKKKKKKKKwwKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLddddddddddddBdddddddddddddddddBdddddddddddddddKKKKKKKKwwKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLddddddddddddBdddddddddddddddddBdddddddddddddddKKKKKKKKwwKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLddddddddddddBdddddddddddddddddBdddddddddddddddKKKKKKKKKKKk........"
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRR.."
+      - "..LLLBLLLLLLLLLLLLLLLLLLBLLLKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRR.."
+      - "..LLLBLLLLLLKKKKKKKKKKKKKKKKRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR.."
+      - "..LLLBBBBBBBKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRRkk"
+      - "..LLLLLLLLLLKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRRkk"
+      - "..ddddddddddKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRRkk"
+      - "..ddddddddddKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRR.."
+      - "..ddddddddddKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRR.."
+      - "............KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKRRRRRR.."
+      - "......................................................................ddddddddddddddddRRRRRR.."
+      - "....................................................................................kKKkKKkKKk"
+      - "....................................................................................KKkKKkKKkK"
+      - ".....................................................................................kKKkKKkKK"
+      - ".....................................................................................KKkKKkKKk"
+      - "......................................................................................kKKkKKkK"
+      - "......................................................................................KKkKKkKK"
+      - ".......................................................................................kKKkKKk"
+      - ".......................................................................................KKkKKkK"
+  # Driving wheels: 8 spokes, turned 15 degrees clockwise per frame.
+  - id: wheel-big-0
+    _palette: train
+    lines:
+      - "......tttttt......"
+      - "....tttttttTTT...."
+      - "...ttRRRRRRRRTT..."
+      - "..ttRRKKRRKKRRTT.."
+      - ".ttRRKKKRRKKKRRTT."
+      - ".tRRKRKKRRKKRKRRT."
+      - "ttRKKKRKRRKRKKKRTT"
+      - "ttRKKKKRBBRKKKKRTT"
+      - "ttRRRRRBBBBRRRRRTT"
+      - "ttRRRRRBBBBRRRRRTT"
+      - "ttRKKKKRBBRKKKKRTT"
+      - "tTRKKKRKRRKRKKKRTT"
+      - ".TRRKRKKRRKKRKRRT."
+      - ".TTRRKKKRRKKKRRTT."
+      - "..TTRRKKRRKKRRTT.."
+      - "...TTRRRRRRRRTT..."
+      - "....TTTTTTTTTT...."
+      - "......TTTTTT......"
+  - id: wheel-big-1
+    _palette: train
+    lines:
+      - "......tttttt......"
+      - "....tttttttTTT...."
+      - "...ttRRRRRRRRTT..."
+      - "..ttRRRKKKRKRRTT.."
+      - ".ttRKKRKKRRKKKRTT."
+      - ".tRRKKRRKRRKKKRRT."
+      - "ttRKKKKRRRKKRRRRTT"
+      - "ttRRRRKRBBRRRKKRTT"
+      - "ttRKRRRBBBBRKKKRTT"
+      - "ttRKKKRBBBBRRRKRTT"
+      - "ttRKKRRRBBRKRRRRTT"
+      - "tTRRRRKKRRRKKKKRTT"
+      - ".TRRKKKRRKRRKKRRT."
+      - ".TTRKKKRRKKRKKRTT."
+      - "..TTRRKRKKKRRRTT.."
+      - "...TTRRRRRRRRTT..."
+      - "....TTTTTTTTTT...."
+      - "......TTTTTT......"
+  - id: wheel-big-2
+    _palette: train
+    lines:
+      - "......tttttt......"
+      - "....tttttttTTT...."
+      - "...ttRRRRRRRRTT..."
+      - "..ttRRKRKKKRRRTT.."
+      - ".ttRKKKRRKKRKKRTT."
+      - ".tRRKKKRRKRRKKRRT."
+      - "ttRRRRKKRRRKKKKRTT"
+      - "ttRKKRRRBBRKRRRRTT"
+      - "ttRKKKRBBBBRRRKRTT"
+      - "ttRKRRRBBBBRKKKRTT"
+      - "ttRRRRKRBBRRRKKRTT"
+      - "tTRKKKKRRRKKRRRRTT"
+      - ".TRRKKRRKRRKKKRRT."
+      - ".TTRKKRKKRRKKKRTT."
+      - "..TTRRRKKKRKRRTT.."
+      - "...TTRRRRRRRRTT..."
+      - "....TTTTTTTTTT...."
+      - "......TTTTTT......"
+  # Small wheels: 4 spokes, turned 30 degrees per frame.
+  - id: wheel-small-0
+    _palette: train
+    lines:
+      - "...tttT..."
+      - ".ttRRRRTT."
+      - ".tRKRRKRT."
+      - "tRKKRRKKRT"
+      - "tRRRBBRRRT"
+      - "tRRRBBRRRT"
+      - "TRKKRRKKRT"
+      - ".TRKRRKRT."
+      - ".TTRRRRTT."
+      - "...TTTT..."
+  - id: wheel-small-1
+    _palette: train
+    lines:
+      - "...tttT..."
+      - ".ttRRRRTT."
+      - ".tRKKKRRT."
+      - "tRRRRRRKRT"
+      - "tRKRBBRKRT"
+      - "tRKRBBRKRT"
+      - "TRKRRRRRRT"
+      - ".TRRKKKRT."
+      - ".TTRRRRTT."
+      - "...TTTT..."
+  - id: wheel-small-2
+    _palette: train
+    lines:
+      - "...tttT..."
+      - ".ttRRRRTT."
+      - ".tRRKKKRT."
+      - "tRKRRRRRRT"
+      - "tRKRBBRKRT"
+      - "tRKRBBRKRT"
+      - "TRRRRRRKRT"
+      - ".TRKKKRRT."
+      - ".TTRRRRTT."
+      - "...TTTT..."
+  # Puffs drifting back from the chimney; after 3 frames each one has taken the place of the next.
+  - id: smoke-0
+    _palette: train
+    lines:
+      - "..............vvvvvvvvvvvv......................................................"
+      - "..............vvvvvvvvvvvv......vvvv............................................"
+      - ".............vvvvvvvvvvvvvv...vvvVVvvv.........................................."
+      - ".............vvvvvvvvvvvvvv..vvVVVVVVvv........................................."
+      - ".............vvvvvvvvvvvvvv.vvVVVVVVVVvv.......vv..............................."
+      - ".............vvvvvvvvvvvvvv.vVVVVVVVVVVv.....vvvvvv............................."
+      - ".............vvvvvvvvvvvvvv.vVVVVVVVVVVv....vVVVVVVv............................"
+      - ".............vvvvvvvvvvvvvv.vVVVVVVVVVVv...vvVVVVVVvv..........................."
+      - ".............vvvvvvvvvvvvvv.vVVVVVVVVVVv...vVVVVVVVVv.......vvvv................"
+      - "..............vvvvvvvvvvvv..vVVVVVVVVVVv...vVVVVVVVVv......vVVVVv..............."
+      - "...............vvvvvvvvvv....vVVVVVVVVv....vVVVVVVVVv.....vVVVVVVv.............."
+      - "................vvvvvvvv.....vvVVVVVVvv....vVVVVVVVVv.....vVVVVVVv........vvvv.."
+      - "...................vv.........vvvvvvvv......vVVVVVVv......vVVVVVVv.......vvVVvv."
+      - "................................vvvv.........vvVVvv.......vvVVVVvv.......vVVVVv."
+      - "..............................................vvvv.........vvVVvv........vVVVVv."
+      - "............................................................vvvv.........vvVVvv."
+      - "..........................................................................vvvv.."
+      - "................................................................................"
+      - "................................................................................"
+      - "................................................................................"
+  - id: smoke-1
+    _palette: train
+    lines:
+      - ".........vvvvvvvvvvvvv.....vvvvv................................................"
+      - "........vvvvvvvvvvvvvvv..vvvVVVvvv.............................................."
+      - "........vvvvvvvvvvvvvvv.vvVVVVVVVvv............................................."
+      - "........vvvvvvvvvvvvvvvvvVVVVVVVVVv.......vvv..................................."
+      - "........vvvvvvvvvvvvvvvvVVVVVVVVVVvv....vvvvvvv................................."
+      - "........vvvvvvvvvvvvvvvvVVVVVVVVVVVv...vvVVVVVvv................................"
+      - "........vvvvvvvvvvvvvvvvVVVVVVVVVVVv..vvVVVVVVVv................................"
+      - "........vvvvvvvvvvvvvv.vVVVVVVVVVVVv..vVVVVVVVVvv......vvvvv...................."
+      - ".........vvvvvvvvvvvvv.vVVVVVVVVVVvv..vVVVVVVVVVv.....vVVVVvv..................."
+      - ".........vvvvvvvvvvvv..vvVVVVVVVVVv...vVVVVVVVVVv....vVVVVVVvv.................."
+      - "..........vvvvvvvvvv....vVVVVVVVVvv...vVVVVVVVVvv....vVVVVVVVv.......vvvv......."
+      - "............vvvvvvv......vvVVVVVvv....vvVVVVVVVv.....vVVVVVVVv......vvVVVv......"
+      - "..........................vvvvvvv......vvVVVVVvv.....vVVVVVVvv......vVVVVvv....."
+      - "........................................vvvvvv........vVVVVVv.......vVVVVvv....."
+      - "......................................................vvvvvv........vvVVVv......"
+      - ".........................................................v...........vvvvv......"
+      - "......................................................................vv........"
+      - "................................................................................"
+      - "................................................................................"
+      - "................................................................................"
+  - id: smoke-2
+    _palette: train
+    lines:
+      - "...vvvvvvvvvvvvvvv..vvvvvvvvv..................................................."
+      - "...vvvvvvvvvvvvvvv.vvvvvvvvvvv.................................................."
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvv......vvvv......................................."
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvv....vvvVVvv......................................"
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvvv..vvVVVVVVv....................................."
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvvv.vvVVVVVVVVv...................................."
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvvv.vVVVVVVVVVv......vvvvvv........................"
+      - "...vvvvvvvvvvvvvvvvvvvvvvvvvvvvv.vVVVVVVVVVvv....vVVVVVvv......................."
+      - "....vvvvvvvvvvvvv.vvvvvvvvvvvvv..vVVVVVVVVVvv...vvVVVVVVv......................."
+      - ".....vvvvvvvvvvv...vvvvvvvvvvvv..vVVVVVVVVVv....vVVVVVVVv.......vvvvv..........."
+      - "......vvvvvvvvv....vvvvvvvvvvv...vvVVVVVVVVv....vVVVVVVVv.......vVVVvv.........."
+      - "........vvvvv.......vvvvvvvvv.....vVVVVVVVvv....vVVVVVVVv......vVVVVVv.........."
+      - "......................vvvvv........vvVVVvvv.....vvVVVVVVv......vVVVVVv.........."
+      - "....................................vvvvv........vvVVVvv.......vVVVVVv.........."
+      - "..................................................vvvvv........vvVVVvv.........."
+      - "................................................................vvvvv..........."
+      - "................................................................................"
+      - "................................................................................"
+      - "................................................................................"
+      - "................................................................................"
+
+flipbooks:
+  - id: wheel-big
+    width: 18
+    height: 18
+    fps: 16
+    frames:
+      - { _sprite: wheel-big-0, coordinates: [0, 0], duration: 1 }
+      - { _sprite: wheel-big-1, coordinates: [0, 0], duration: 1 }
+      - { _sprite: wheel-big-2, coordinates: [0, 0], duration: 1 }
+  - id: wheel-small
+    width: 10
+    height: 10
+    fps: 16
+    frames:
+      - { _sprite: wheel-small-0, coordinates: [0, 0], duration: 1 }
+      - { _sprite: wheel-small-1, coordinates: [0, 0], duration: 1 }
+      - { _sprite: wheel-small-2, coordinates: [0, 0], duration: 1 }
+  - id: smoke
+    width: 80
+    height: 20
+    fps: 16
+    frames:
+      - { _sprite: smoke-0, coordinates: [0, 0], duration: 1 }
+      - { _sprite: smoke-1, coordinates: [0, 0], duration: 1 }
+      - { _sprite: smoke-2, coordinates: [0, 0], duration: 1 }
+
+panels:
+  - id: sky
+    width: 256
+    height: 256
+    elements:
+      - _sprite: sky
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 256, height: 256 }]
+  - id: mountain
+    width: 256
+    height: 134
+    elements:
+      - { _sprite: mountain, coordinates: [0, 0] }
+  # Each scrolling plane is as wide as the canvas plus the distance it moves
+  # in one loop, so its edge never shows.
+  - id: city
+    width: 384
+    height: 74
+    elements:
+      - _sprite: city
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 384, height: 74 }]
+  - id: field
+    width: 256
+    height: 36
+    elements:
+      - _sprite: field
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 256, height: 36 }]
+  - id: poles
+    width: 768
+    height: 120
+    elements:
+      - _sprite: pole
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 768, height: 120 }]
+  - id: track
+    width: 1024
+    height: 30
+    elements:
+      - _sprite: track
+        coordinates: [0, 0]
+        transforms: [{ kind: tile, width: 1024, height: 30 }]
+  # The train, 232x76. The bottom row is where the wheels touch the rail.
+  - id: train
+    width: 232
+    height: 76
+    elements:
+      - { id: coach, _sprite: coach, coordinates: [0, 33] }
+      - { id: tender, _sprite: tender, coordinates: [92, 36] }
+      - { id: loco, _sprite: loco, coordinates: [138, 16] }
+      - { _flipbook: wheel-small, coordinates: [8, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [20, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [58, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [70, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [96, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [109, 66], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [122, 66], zIndex: 1 }
+      - { _flipbook: wheel-big, coordinates: [156, 58], zIndex: 1 }
+      - { _flipbook: wheel-big, coordinates: [176, 58], zIndex: 1 }
+      - { _flipbook: wheel-big, coordinates: [196, 58], zIndex: 1 }
+      - { _flipbook: wheel-small, coordinates: [214, 66], zIndex: 1 }
+      - { _flipbook: smoke, coordinates: [138, 0], zIndex: 2 }
+
+timelines:
+  - id: rumble
+    description: The locomotive, the tender and the coach bounce one after the other.
+    _panel: train
+    fps: 16
+    duration: 8
+    transitions:
+      - { kind: moveTo, _element: loco, coordinates: [138, 15], start: 0, duration: 1 }
+      - { kind: moveTo, _element: loco, coordinates: [138, 16], start: 2, duration: 1 }
+      - { kind: moveTo, _element: tender, coordinates: [92, 35], start: 2, duration: 1 }
+      - { kind: moveTo, _element: tender, coordinates: [92, 36], start: 4, duration: 1 }
+      - { kind: moveTo, _element: coach, coordinates: [0, 32], start: 4, duration: 1 }
+      - { kind: moveTo, _element: coach, coordinates: [0, 33], start: 6, duration: 1 }
+
+scenes:
+  - id: countryside
+    width: 256
+    height: 256
+    layers:
+      - { _panel: sky, coordinates: [0, 0] }
+      - { _panel: mountain, coordinates: [0, 60], zIndex: 1 }
+      - { id: city, _panel: city, coordinates: [0, 120], zIndex: 2 }
+      - { _panel: field, coordinates: [0, 190], zIndex: 3 }
+      - { id: poles, _panel: poles, coordinates: [0, 98], zIndex: 4 }
+      - { id: track, _panel: track, coordinates: [0, 226], zIndex: 5 }
+      # Centered and still: the camera travels with the train. The wheels
+      # sit on the rail at y 226.
+      - { _timeline: rumble, coordinates: [12, 150], zIndex: 6 }
+
+sequences:
+  - id: ride
+    description: Seen from alongside the train, the landscape scrolls by at the speed of its distance.
+    _scene: countryside
+    fps: 16
+    duration: 128
+    actions:
+      - { kind: moveTo, _layer: track, coordinates: [-768, 226], start: 0, duration: 128 }
+      - { kind: moveTo, _layer: poles, coordinates: [-512, 98], start: 0, duration: 128 }
+      - { kind: moveTo, _layer: city, coordinates: [-128, 120], start: 0, duration: 128 }
+
+exports:
+  - /sequences/ride
