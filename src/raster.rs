@@ -155,7 +155,12 @@ pub fn output_size(size: (u32, u32), transform: &Transform) -> (u32, u32) {
 
 /// Applies `transforms` in array order.
 pub fn apply_all(image: &Image, transforms: &[Transform]) -> Image {
-    transforms
-        .iter()
-        .fold(image.clone(), |img, t| apply(&img, t))
+    // The first transform reads `image` directly: copying it first would
+    // only be thrown away.
+    match transforms.split_first() {
+        None => image.clone(),
+        Some((first, rest)) => rest
+            .iter()
+            .fold(apply(image, first), |img, t| apply(&img, t)),
+    }
 }
