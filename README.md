@@ -53,6 +53,7 @@ pixel-perfect render hero.json --output-path out --scale 4
 | `--safe-build` | off | Name files by a hash of their id (see below). |
 | `--single-frames` | off | Write animations as one still image per frame (see [Single frames](#single-frames)). |
 | `--max-image-size <SIZE>` | `1GiB` | Largest image the engine may build (see below). |
+| `--threads <N>` | physical cores | Worker threads for rendering and encoding (see below). |
 
 Files are written to `<output-path>/<collection>/<id>.<format>`, for example
 `out/sprites/hero.png`. Ids that are not portable file names (containing `/`,
@@ -145,6 +146,13 @@ or the export request is invalid, and files from earlier renders are never
 deleted. A file that already has exactly the new content is not rewritten and
 keeps its modification time, so tools that reload changed files reload only
 the images that really changed.
+
+Rendering and encoding run on several threads; the output is the same for
+any number of them. By default there is one thread per physical CPU core: on
+CPUs with two hardware threads per core, using all of them was measured to
+give no faster PNG output, and to cost more CPU time and memory. `--threads`
+overrides the default, and so does the `RAYON_NUM_THREADS` environment
+variable when `--threads` is not given.
 
 Flipbooks, timelines, and panels or scenes that play a flipbook or a timeline
 are written as **APNG** (still with the `.png` extension, at the same paths).
