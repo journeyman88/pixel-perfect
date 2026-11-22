@@ -120,13 +120,13 @@ pub fn resolve_palettes(
         stack: Vec::new(),
     };
     let mut resolved = BTreeMap::new();
-    for i in 0..ws.palettes.len() {
+    for (i, palette) in ws.palettes.iter().enumerate() {
         // Only the first palette with a given id is reachable by reference.
-        if index.get(ws.palettes[i].id.as_str()) != Some(&i) {
+        if index.get(palette.id.as_str()) != Some(&i) {
             continue;
         }
         if let Some(p) = visit(&mut ctx, i, diagnostics) {
-            resolved.insert(ws.palettes[i].id.clone(), p);
+            resolved.insert(palette.id.clone(), p);
         }
     }
     resolved
@@ -322,12 +322,12 @@ pub fn resolve_sprites(
         stack: Vec::new(),
     };
     let mut resolved = BTreeMap::new();
-    for i in 0..ws.sprites.len() {
-        if index.get(ws.sprites[i].id.as_str()) != Some(&i) {
+    for (i, sprite) in ws.sprites.iter().enumerate() {
+        if index.get(sprite.id.as_str()) != Some(&i) {
             continue;
         }
         if let Some(s) = visit(&mut ctx, i, diagnostics) {
-            resolved.insert(ws.sprites[i].id.clone(), s);
+            resolved.insert(sprite.id.clone(), s);
         }
     }
     resolved
