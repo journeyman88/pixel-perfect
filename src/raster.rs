@@ -99,6 +99,16 @@ impl Image {
             self.get(x / factor, y / factor)
         })
     }
+
+    /// Like [`Image::upscale`], but lends `self` instead of copying it when
+    /// `factor` is 1.
+    pub fn upscaled(&self, factor: u32) -> std::borrow::Cow<'_, Image> {
+        if factor == 1 {
+            std::borrow::Cow::Borrowed(self)
+        } else {
+            std::borrow::Cow::Owned(self.upscale(factor))
+        }
+    }
 }
 
 /// Applies one transform. Bounds of `crop` are validated when the worksheet is

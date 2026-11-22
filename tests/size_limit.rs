@@ -315,8 +315,10 @@ fn no_limit_for_animations() {
 }
 
 #[test]
-fn animation_limit_applies_after_scale() {
-    // 1000 frames of 32x32 scaled by 16 (1 MiB each) exceed 512 MiB.
+fn animation_frames_are_counted_before_scale() {
+    // 1000 frames of 32x32 before merging are 3.9 MiB: frames are rendered
+    // and merged before --scale, and upscaled one at a time when encoded.
+    // The final frame, 512x512 at --scale 16, is 1 MiB.
     let ws = timeline_sheet(
         32,
         32,
@@ -325,9 +327,32 @@ fn animation_limit_applies_after_scale() {
         json!([{ "kind": "moveTo", "_element": "hero",
         "coordinates": [31, 31], "start": 0, "duration": 999 }]),
     );
-    assert!(export::plan(&ws, &options(16, Some(1 << 30))).is_ok());
-    let errors = export::plan(&ws, &options(16, Some(512 << 20))).unwrap_err();
-    assert_error(&errors, "/timelines/0", "more than 512 frames");
+    assert!(export::plan(&ws, &options(16, Some(4 << 20))).is_ok());
+    let errors = export::plan(&ws, &options(16, Some(2 << 20))).unwrap_err();
+    assert_error(
+        &errors,
+        "/timelines/0",
+        "more than 512 frames of 32x32 before --scale",
+    );
+}
+
+#[test]
+fn scaled_animation_fits_although_its_final_frames_would_not() {
+    // About 380 frames of 256x256 (256 KiB each, about 95 MiB) at --scale 4:
+    // as final 1024x1024 frames (4 MiB each) they would take about 1.5 GiB,
+    // but they are never held at that size, so the default limit accepts it.
+    let ws = timeline_sheet(
+        256,
+        256,
+        100,
+        380,
+        json!([{ "kind": "moveTo", "_element": "hero",
+        "coordinates": [255, 255], "start": 0, "duration": 379 }]),
+    );
+    assert!(export::plan(&ws, &options(4, DEFAULT)).is_ok());
+    // It does have more than 256 frames before merging: as many 4 MiB final
+    // frames as 1 GiB holds. Counted on final frames, it would be rejected.
+    assert!(export::plan(&ws, &options(1, Some(64 << 20))).is_err());
 }
 
 #[test]

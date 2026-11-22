@@ -541,12 +541,20 @@ fn plan_animation(
     ws: &ResolvedWorksheet,
     collection: &str,
     id: &str,
-    (w, h): (u64, u64),
     options: &RenderOptions,
 ) -> Result<Fraction, String> {
     let animation = Animation::new(ws, collection, id)
         .map_err(|_| "the clock or the loop of this animation is too long to compute".to_owned())?;
+    // Frames are rendered and merged before `--scale`, and each is upscaled
+    // only when it is encoded: the frames before merging are bounded at their
+    // size before scaling. One final frame is checked by the size walk.
+    let (w, h) = (u64::from(animation.width), u64::from(animation.height));
     let frame_bytes = (w * h * 4).max(1);
+    let before_scaling = if options.scale > 1 {
+        " before --scale"
+    } else {
+        ""
+    };
     let by_size = options.max_image_size.map_or(usize::MAX, |max| {
         usize::try_from(max / frame_bytes).unwrap_or(usize::MAX)
     });
@@ -555,7 +563,7 @@ fn plan_animation(
     let ticks = animation.change_ticks(limit).map_err(|_| {
         if by_size < MAX_FRAMES {
             format!(
-                "the animation needs more than {limit} frames of {w}x{h} (over {}), more than the {} image size limit; raise it with --max-image-size",
+                "the animation needs more than {limit} frames of {w}x{h}{before_scaling} (over {}), more than the {} image size limit; raise it with --max-image-size",
                 human_size(u128::from(frame_bytes) * (limit as u128 + 1)),
                 human_size(u128::from(options.max_image_size.unwrap_or(0))),
             )
@@ -692,7 +700,7 @@ pub fn plan(ws: &ResolvedWorksheet, options: &RenderOptions) -> Result<Plan, Vec
         }
         let loop_seconds = if animate::is_animated(ws, collection, &id) {
             let resource = format!("/{collection}/{index}");
-            match plan_animation(ws, collection, &id, (sw, sh), options) {
+            match plan_animation(ws, collection, &id, options) {
                 Ok(seconds) => {
                     if collection == "sequences" {
                         let q = &ws.model.sequences[index];
@@ -799,11 +807,9 @@ pub fn animation_bytes(
     let animation = Animation::new(ws, output.collection, &output.id)
         .expect("the export plan checked the time model");
     if format == OutputFormat::Webp {
-        let frames: Vec<(Image, u128)> = animation
-            .ms_frames()
-            .into_par_iter()
-            .map(|(image, ms)| (image.upscale(scale), ms))
-            .collect();
+        // Frames stay at their size before scaling: the encoder upscales
+        // each one inside its own job.
+        let frames: Vec<(Image, u128)> = animation.ms_frames();
         let webp_frames: Vec<WebpFrame> = frames
             .iter()
             .map(|(image, duration_ms)| WebpFrame {
@@ -811,15 +817,15 @@ pub fn animation_bytes(
                 duration_ms: *duration_ms,
             })
             .collect();
-        return webp::animated(&webp_frames);
+        return webp::animated_scaled(&webp_frames, scale);
     }
     let frames: Vec<(Image, Vec<(u16, u16)>)> = animation
         .frames()
-        .into_par_iter()
+        .into_iter()
         .map(|(image, ticks)| {
             let delays =
                 time::delays(ticks, animation.clock).expect("the export plan checked every delay");
-            (image.upscale(scale), delays)
+            (image, delays)
         })
         .collect();
     let apng_frames: Vec<encode::ApngFrame> = frames
@@ -830,7 +836,7 @@ pub fn animation_bytes(
                 .map(move |&delay| encode::ApngFrame { image, delay })
         })
         .collect();
-    Ok((encode::apng(&apng_frames), apng_frames.len()))
+    Ok((encode::apng_scaled(&apng_frames, scale), apng_frames.len()))
 }
 
 /// Builds the manifest of a plan. `frames` is filled in by [`write`].

@@ -323,6 +323,17 @@ fn apng_header(width: u32, height: u32, encoding: &Encoding, frame_count: u32) -
 ///
 /// Panics if `frames` is empty or the images differ in size.
 pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
+    apng_scaled(frames, 1)
+}
+
+/// Like [`apng`] for frames given before `--scale`: the file shows them
+/// upscaled by `scale`, and is the same as [`apng`] of the upscaled frames.
+/// Each frame is upscaled only inside its own encoding job, so the frames
+/// are held at their size before scaling.
+///
+/// Panics if `frames` is empty, the images differ in size or `scale` is 0.
+pub fn apng_scaled(frames: &[ApngFrame], scale: u32) -> Vec<u8> {
+    assert!(scale > 0, "scale is at least 1");
     let first = frames
         .first()
         .expect("an animation has at least one frame")
@@ -335,16 +346,18 @@ pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
             "every frame has the canvas size"
         );
     }
+    // Upscaling adds no colors: the palette comes from the frames as given.
     let encoding = choose_all(frames.iter().map(|f| f.image));
     let frame_count = u32::try_from(frames.len()).expect("at most 2^31 - 1 frames");
-    let mut out = apng_header(width, height, &encoding, frame_count);
-    // Only the compressed data is kept, so memory grows by the size of the
-    // file, not by raw frames.
+    let mut out = apng_header(width * scale, height * scale, &encoding, frame_count);
+    // Each job upscales the two frames it compares, so only a few upscaled
+    // frames exist at a time; only the compressed data is kept.
     let parts: Vec<EncodedPart> = (0..frames.len())
         .into_par_iter()
         .map(|i| {
-            let prev = i.checked_sub(1).map(|p| frames[p].image);
-            encoded_part(prev, frames[i].image, &encoding)
+            let next = frames[i].image.upscaled(scale);
+            let prev = i.checked_sub(1).map(|p| frames[p].image.upscaled(scale));
+            encoded_part(prev.as_deref(), &next, &encoding)
         })
         .collect();
     let mut sequence: u32 = 0;

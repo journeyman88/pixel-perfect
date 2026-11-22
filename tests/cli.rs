@@ -682,3 +682,30 @@ fn zero_threads_is_a_usage_error() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn train_example_renders_at_scale_4_under_the_default_limit() {
+    // 382 frames before merging, 128 in the file: counted before --scale
+    // (256 KiB each) they fit the default 1 GiB, as final 1024x1024 frames
+    // (4 MiB each) they would not.
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/train.yaml");
+    cli()
+        .arg("render")
+        .arg(&sheet)
+        .arg("-o")
+        .arg(dir.path())
+        .args(["--scale", "4"])
+        .assert()
+        .code(0);
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("manifest.json")).unwrap())
+            .unwrap();
+    let ride = &manifest["files"][0];
+    assert_eq!(ride["id"], "/sequences/ride");
+    assert_eq!(
+        (ride["width"].as_u64(), ride["height"].as_u64()),
+        (Some(1024), Some(1024))
+    );
+    assert_eq!(ride["frameCount"], 128);
+}

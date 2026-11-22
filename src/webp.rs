@@ -147,17 +147,26 @@ pub fn split_duration(duration_ms: u128) -> impl Iterator<Item = u32> {
 ///
 /// Panics if `frames` is empty, the images differ in size or a duration is 0.
 pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
+    animated_scaled(frames, 1)
+}
+
+/// Like [`animated`] for frames given before `--scale`: the file shows them
+/// upscaled by `scale`, and is the same as [`animated`] of the upscaled
+/// frames. Each frame is upscaled only inside its own encoding job.
+pub fn animated_scaled(frames: &[WebpFrame], scale: u32) -> Result<(Vec<u8>, usize), WebpError> {
+    assert!(scale > 0, "scale is at least 1");
     let first = frames
         .first()
         .expect("an animation has at least one frame")
         .image;
     let (width, height) = (first.width(), first.height());
+    // Upscaling adds no colors, so no alpha either.
     let alpha = frames.par_iter().any(|f| has_alpha(f.image));
 
     let mut body = Vec::new();
     let mut vp8x = vec![ANIMATION_FLAG | if alpha { ALPHA_FLAG } else { 0 }, 0, 0, 0];
-    vp8x.extend(u24(width - 1));
-    vp8x.extend(u24(height - 1));
+    vp8x.extend(u24(width * scale - 1));
+    vp8x.extend(u24(height * scale - 1));
     chunk(&mut body, b"VP8X", &vp8x);
     // Background color (B, G, R, A) and loop count 0 (forever).
     chunk(&mut body, b"ANIM", &[0, 0, 0, 0, 0, 0]);
@@ -181,14 +190,16 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
     let firsts: Vec<(Rect, Vec<u8>)> = (0..frames.len())
         .into_par_iter()
         .map(|i| {
-            let image = frames[i].image;
+            // This job upscales the two frames it compares.
+            let image = frames[i].image.upscaled(scale);
             let rect = match i {
-                0 => Rect::full(image),
+                0 => Rect::full(&image),
                 _ => delta::align_even(
-                    delta::changed_rect(frames[i - 1].image, image).unwrap_or(Rect::UNCHANGED),
+                    delta::changed_rect(&frames[i - 1].image.upscaled(scale), &image)
+                        .unwrap_or(Rect::UNCHANGED),
                 ),
             };
-            (rect, vp8l(&delta::crop(image, rect), alpha))
+            (rect, vp8l(&delta::crop(&image, rect), alpha))
         })
         .collect();
 
@@ -200,6 +211,8 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
             let (rect, bitstream) = if part == 0 {
                 (first_rect, &first)
             } else {
+                // The 1x1 area at (0, 0) is the same pixel before and after
+                // upscaling, so the frame as given is enough.
                 let unchanged = repeat
                     .get_or_insert_with(|| vp8l(&delta::crop(frame.image, Rect::UNCHANGED), alpha));
                 (Rect::UNCHANGED, &*unchanged)
