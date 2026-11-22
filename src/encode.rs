@@ -4,11 +4,20 @@
 //! Deterministic PNG and APNG encoding, indexed or RGBA depending on the
 //! color count.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use foldhash::fast::FixedState;
 
 use crate::delta::{self, Rect};
 use crate::model::Rgba;
 use crate::raster::{Image, TRANSPARENT};
+
+/// Hash maps keyed by color, looked up once or more per pixel. The default
+/// SipHash is built to resist hash flooding, which does not apply to pixels,
+/// and dominated encoding time; foldhash with a fixed seed is much faster and
+/// keeps every run identical.
+type ColorMap<V> = HashMap<Rgba, V, FixedState>;
+type ColorSet = HashSet<Rgba, FixedState>;
 
 /// Most colors an indexed PNG can hold.
 pub const MAX_PALETTE: usize = 256;
@@ -38,10 +47,10 @@ pub fn choose(image: &Image) -> Encoding {
 /// order) from their distinct colors together. Colors are taken by first
 /// appearance scanning the images in order, each in row-major order.
 pub fn choose_all<'a>(images: impl IntoIterator<Item = &'a Image>) -> Encoding {
-    let mut seen: HashMap<Rgba, ()> = HashMap::new();
+    let mut seen = ColorSet::default();
     let (mut translucent, mut opaque) = (Vec::new(), Vec::new());
     for &p in images.into_iter().flat_map(|image| image.pixels()) {
-        if seen.insert(p, ()).is_some() {
+        if !seen.insert(p) {
             continue;
         }
         if seen.len() > MAX_PALETTE {
@@ -72,7 +81,7 @@ pub fn choose_all<'a>(images: impl IntoIterator<Item = &'a Image>) -> Encoding {
 /// Turns images into encoded pixel rows for one [`Encoding`].
 struct PixelRows {
     /// Palette index of each color and the bit depth, when indexed.
-    indexed: Option<(HashMap<Rgba, u8>, u8)>,
+    indexed: Option<(ColorMap<u8>, u8)>,
 }
 
 impl PixelRows {
@@ -115,7 +124,7 @@ fn configure<W: std::io::Write>(encoder: &mut png::Encoder<W>, encoding: Encodin
                 let trns: Vec<u8> = palette[..transparent].iter().map(|p| p.0[3]).collect();
                 encoder.set_trns(trns);
             }
-            let index: HashMap<Rgba, u8> = palette
+            let index: ColorMap<u8> = palette
                 .iter()
                 .enumerate()
                 .map(|(i, &c)| (c, i as u8))
@@ -293,7 +302,7 @@ pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
 
 /// Packs palette indices into rows of `bit_depth` bits per pixel, most
 /// significant bits first, each row padded to a whole byte.
-fn pack_indices(image: &Image, index: &HashMap<Rgba, u8>, bit_depth: u8) -> Vec<u8> {
+fn pack_indices(image: &Image, index: &ColorMap<u8>, bit_depth: u8) -> Vec<u8> {
     let per_byte = 8 / bit_depth as usize;
     let row_bytes = (image.width() as usize).div_ceil(per_byte);
     let mut data = vec![0u8; row_bytes * image.height() as usize];

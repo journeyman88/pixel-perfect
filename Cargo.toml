@@ -22,6 +22,7 @@ path = "src/main.rs"
 blake2 = "0.11"
 clap = { version = "4.6", features = ["derive"] }
 ctrlc = "3.5.3"
+foldhash = "0.2"
 image-webp = "0.2.4"
 jsonschema = { version = "0.61", default-features = false }
 notify = "8.2.1"

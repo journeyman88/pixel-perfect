@@ -893,6 +893,7 @@ dependencies = [
  "blake2",
  "clap",
  "ctrlc",
+ "foldhash",
  "image-webp",
  "jsonschema",
  "notify",
