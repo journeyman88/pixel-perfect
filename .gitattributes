@@ -1,0 +1,6 @@
+# Text files keep LF line endings on every system, Windows included:
+# golden files are compared byte for byte.
+* text=auto eol=lf
+
+*.png binary
+*.webp binary
