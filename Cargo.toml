@@ -2,7 +2,7 @@
 name = "pixel-perfect"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Renders lossless pixel art (PNG, APNG, WebP) from declarative worksheets"
 license = "Apache-2.0"
 readme = "README.md"
