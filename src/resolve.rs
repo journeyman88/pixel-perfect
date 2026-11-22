@@ -262,29 +262,29 @@ pub fn resolve_sprites(
         let sprite = &ctx.ws.sprites[i];
 
         let resolved = ResolvedSprite { palette, rows };
-        if let Some(w) = sprite.width {
-            if w != resolved.width() {
-                diagnostics.push(Diagnostic::at(
-                    at("/width"),
-                    format!(
-                        "declared width {w} does not match the resolved width {}",
-                        resolved.width()
-                    ),
-                ));
-                ok = false;
-            }
+        if let Some(w) = sprite.width
+            && w != resolved.width()
+        {
+            diagnostics.push(Diagnostic::at(
+                at("/width"),
+                format!(
+                    "declared width {w} does not match the resolved width {}",
+                    resolved.width()
+                ),
+            ));
+            ok = false;
         }
-        if let Some(h) = sprite.height {
-            if h != resolved.height() {
-                diagnostics.push(Diagnostic::at(
-                    at("/height"),
-                    format!(
-                        "declared height {h} does not match the resolved height {}",
-                        resolved.height()
-                    ),
-                ));
-                ok = false;
-            }
+        if let Some(h) = sprite.height
+            && h != resolved.height()
+        {
+            diagnostics.push(Diagnostic::at(
+                at("/height"),
+                format!(
+                    "declared height {h} does not match the resolved height {}",
+                    resolved.height()
+                ),
+            ));
+            ok = false;
         }
 
         // Missing palettes are reported as broken references by `semantic`.

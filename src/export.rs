@@ -91,7 +91,7 @@ pub fn human_size(bytes: u128) -> String {
     for (unit, factor) in UNITS {
         let factor = u128::from(factor);
         if bytes >= factor {
-            return if bytes % factor == 0 {
+            return if bytes.is_multiple_of(factor) {
                 format!("{} {unit}", bytes / factor)
             } else {
                 format!("{:.2} {unit}", bytes as f64 / factor as f64)
