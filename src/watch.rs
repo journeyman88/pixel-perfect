@@ -154,21 +154,24 @@ mod tests {
     }
 
     /// Runs the loop with [`QUIET`] and [`MAX_WAIT`] while `send` feeds it
-    /// from another thread; returns when each render started.
-    fn timed(
+    /// from another thread; returns when each render started, and what
+    /// `send` returned. `send` gets the instant the render times are
+    /// measured from.
+    fn timed<T: Send + 'static>(
         render_time: Duration,
-        send: impl FnOnce(Sender<Signal>) + Send + 'static,
-    ) -> Vec<Duration> {
+        send: impl FnOnce(Sender<Signal>, Instant) -> T + Send + 'static,
+    ) -> (Vec<Duration>, T) {
         let (tx, rx) = channel();
+        let start = Instant::now();
         let mut session = Timed {
-            start: Instant::now(),
+            start,
             renders: Vec::new(),
             render_time,
         };
-        let sender = std::thread::spawn(move || send(tx));
+        let sender = std::thread::spawn(move || send(tx, start));
         run(&rx, QUIET, MAX_WAIT, &mut session);
-        sender.join().unwrap();
-        session.renders
+        let sent = sender.join().unwrap();
+        (session.renders, sent)
     }
 
     fn ms(n: u64) -> Duration {
@@ -177,7 +180,7 @@ mod tests {
 
     #[test]
     fn a_burst_spread_over_time_gives_one_render_after_it() {
-        let renders = timed(Duration::ZERO, |tx| {
+        let (renders, ()) = timed(Duration::ZERO, |tx, _| {
             for _ in 0..5 {
                 tx.send(Signal::Changed).unwrap();
                 std::thread::sleep(ms(10));
@@ -196,33 +199,44 @@ mod tests {
 
     #[test]
     fn changes_that_never_pause_still_render_within_the_maximum_wait() {
-        let renders = timed(Duration::ZERO, |tx| {
+        // At least 1 s of changes about 20 ms apart, never pausing for the
+        // quiet interval. The assertions use the times the changes were
+        // actually sent, since sleeps can last much longer than asked on a
+        // busy machine.
+        let (renders, sent) = timed(Duration::ZERO, |tx, start| {
+            let mut sent = Vec::new();
             for _ in 0..50 {
+                sent.push(start.elapsed());
                 tx.send(Signal::Changed).unwrap();
                 std::thread::sleep(ms(20));
             }
             std::thread::sleep(ms(250));
             tx.send(Signal::Stop).unwrap();
+            sent
         });
-        // About 1 s of changes 20 ms apart: renders about every 300 ms while
-        // they go on, then one after the last.
-        let during: Vec<_> = renders[1..].iter().filter(|&&t| t < ms(1000)).collect();
-        assert!(during.len() >= 2, "renders during the stream: {renders:?}");
-        for pair in renders[1..].windows(2) {
+        let renders = &renders[1..];
+        let last = *sent.last().unwrap();
+        let during = renders.iter().filter(|&&t| t < last).count();
+        assert!(during >= 2, "renders during the stream: {renders:?}");
+        // Every change is followed by a render within the maximum wait.
+        for &change in &sent {
             assert!(
-                pair[1] - pair[0] <= MAX_WAIT + ms(100),
-                "gap too long: {renders:?}"
+                renders
+                    .iter()
+                    .any(|&t| t > change && t <= change + MAX_WAIT + ms(100)),
+                "no render within the maximum wait after the change at \
+                 {change:?}: changes {sent:?}, renders {renders:?}"
             );
         }
         assert!(
-            *renders.last().unwrap() >= ms(1000),
+            *renders.last().unwrap() > last,
             "a render after the last change: {renders:?}"
         );
     }
 
     #[test]
     fn stop_while_waiting_does_not_render() {
-        let renders = timed(Duration::ZERO, |tx| {
+        let (renders, ()) = timed(Duration::ZERO, |tx, _| {
             tx.send(Signal::Changed).unwrap();
             std::thread::sleep(ms(10));
             tx.send(Signal::Stop).unwrap();
@@ -234,7 +248,7 @@ mod tests {
     fn a_change_during_a_render_gives_one_more_render() {
         // The second render starts at about 50 ms and lasts 150 ms; the change
         // at 100 ms arrives during it.
-        let renders = timed(ms(150), |tx| {
+        let (renders, ()) = timed(ms(150), |tx, _| {
             tx.send(Signal::Changed).unwrap();
             std::thread::sleep(ms(100));
             tx.send(Signal::Changed).unwrap();
