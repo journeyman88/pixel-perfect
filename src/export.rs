@@ -853,6 +853,7 @@ fn write_frames(
     ws: &ResolvedWorksheet,
     output: &PlannedOutput,
     options: &RenderOptions,
+    counts: &mut WriteCounts,
 ) -> Result<Vec<ManifestFrame>, RenderError> {
     let animation = Animation::new(ws, output.collection, &output.id)
         .expect("the export plan checked the time model");
@@ -870,7 +871,7 @@ fn write_frames(
             OutputFormat::Webp => webp::still(&image),
         };
         let path = format!("{}/{}.{ext}", output.path, frame_name(index, frames.len()));
-        write_file(&options.output_path.join(&path), &bytes)?;
+        counts.add(write_file(&options.output_path.join(&path), &bytes)?);
         let (num, den) = time::reduced(*ticks, animation.clock);
         out.push(ManifestFrame {
             index,
@@ -881,15 +882,49 @@ fn write_frames(
     Ok(out)
 }
 
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RenderError> {
+/// What [`write_file`] did with a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Written {
+    /// The file was created or its content replaced.
+    Changed,
+    /// The file already had exactly these bytes and was left untouched.
+    Unchanged,
+}
+
+/// Files written and left unchanged by a render.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct WriteCounts {
+    written: usize,
+    unchanged: usize,
+}
+
+impl WriteCounts {
+    fn add(&mut self, outcome: Written) {
+        match outcome {
+            Written::Changed => self.written += 1,
+            Written::Unchanged => self.unchanged += 1,
+        }
+    }
+}
+
+/// Writes `bytes` to `path` in place, creating its directories, unless the
+/// file already has exactly these bytes: then it is left untouched, keeping
+/// its modification time, so tools that reload changed files see only real
+/// changes.
+fn write_file(path: &Path, bytes: &[u8]) -> Result<Written, RenderError> {
     let io = |source| RenderError::Io {
         path: path.to_owned(),
         source,
     };
+    let same_length = std::fs::metadata(path).is_ok_and(|m| m.len() == bytes.len() as u64);
+    if same_length && std::fs::read(path).is_ok_and(|old| old == bytes) {
+        return Ok(Written::Unchanged);
+    }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(io)?;
     }
-    std::fs::write(path, bytes).map_err(io)
+    std::fs::write(path, bytes).map_err(io)?;
+    Ok(Written::Changed)
 }
 
 /// Writes every output of `plan`, then `manifest.json`.
@@ -898,6 +933,15 @@ pub fn write(
     plan: &Plan,
     options: &RenderOptions,
 ) -> Result<Manifest, RenderError> {
+    write_counted(ws, plan, options).map(|(manifest, _)| manifest)
+}
+
+fn write_counted(
+    ws: &ResolvedWorksheet,
+    plan: &Plan,
+    options: &RenderOptions,
+) -> Result<(Manifest, WriteCounts), RenderError> {
+    let mut counts = WriteCounts::default();
     let mut manifest = manifest(plan, options);
     for output in &plan.outputs {
         let entry = manifest
@@ -906,7 +950,8 @@ pub fn write(
             .expect("every output has a manifest entry");
         let bytes = match output.kind {
             EntryKind::FrameCollection => {
-                manifest.files[entry].frames = Some(write_frames(ws, output, options)?);
+                manifest.files[entry].frames =
+                    Some(write_frames(ws, output, options, &mut counts)?);
                 continue;
             }
             EntryKind::Animation => {
@@ -923,12 +968,26 @@ pub fn write(
                 OutputFormat::Webp => webp::still(&image(ws, output, options.scale)),
             },
         };
-        write_file(&options.output_path.join(&output.path), &bytes)?;
+        counts.add(write_file(&options.output_path.join(&output.path), &bytes)?);
     }
     let mut json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
     json.push('\n');
-    write_file(&options.output_path.join("manifest.json"), json.as_bytes())?;
-    Ok(manifest)
+    counts.add(write_file(
+        &options.output_path.join("manifest.json"),
+        json.as_bytes(),
+    )?);
+    Ok((manifest, counts))
+}
+
+/// The result of a render, with how many files it wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderReport {
+    pub plan: Plan,
+    pub manifest: Manifest,
+    /// Files created or whose content changed, `manifest.json` included.
+    pub written: usize,
+    /// Files that already had exactly the new content and were left untouched.
+    pub unchanged: usize,
 }
 
 /// Plans and writes a render.
@@ -936,7 +995,20 @@ pub fn render(
     ws: &ResolvedWorksheet,
     options: &RenderOptions,
 ) -> Result<(Plan, Manifest), RenderError> {
+    render_report(ws, options).map(|r| (r.plan, r.manifest))
+}
+
+/// Plans and writes a render, reporting how many files were written.
+pub fn render_report(
+    ws: &ResolvedWorksheet,
+    options: &RenderOptions,
+) -> Result<RenderReport, RenderError> {
     let plan = plan(ws, options).map_err(RenderError::Plan)?;
-    let manifest = write(ws, &plan, options)?;
-    Ok((plan, manifest))
+    let (manifest, counts) = write_counted(ws, &plan, options)?;
+    Ok(RenderReport {
+        plan,
+        manifest,
+        written: counts.written,
+        unchanged: counts.unchanged,
+    })
 }

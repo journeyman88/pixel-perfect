@@ -1,0 +1,9 @@
+{
+    "palettes": [
+        { "id": "p", "colors": [{ "char": "r", "rgba": [255, 0, 0] }, { "char": "g", "rgba": [0, 255, 0] }] }
+    ],
+    "sprites": [
+        { "id": "hero", "_palette": "p", "lines": ["rg", "gr"] },
+        { "id": "coin", "_palette": "p", "lines": ["gg", "gg"] }
+    ]
+}

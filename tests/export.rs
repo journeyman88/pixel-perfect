@@ -1303,3 +1303,81 @@ fn single_png_frames_are_all_rgba_when_their_colors_do_not_fit_one_palette() {
         assert_eq!(images::header(&png).3, 6, "{}: RGBA", frame.path);
     }
 }
+
+// Unchanged files are not rewritten
+
+/// Modification time of `path`.
+fn mtime(path: &Path) -> std::time::SystemTime {
+    std::fs::metadata(path).unwrap().modified().unwrap()
+}
+
+/// Sets the modification time of `path` one hour in the past, so that a
+/// rewrite is visible whatever the file system's time resolution.
+fn age(path: &Path) -> std::time::SystemTime {
+    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(past)
+        .unwrap();
+    mtime(path)
+}
+
+#[test]
+fn identical_render_writes_nothing() {
+    let ws = worksheet(json!([sprite("hero"), sprite("coin")]), None);
+    let dir = tempfile::tempdir().unwrap();
+    let first = export::render_report(&ws, &options(dir.path())).unwrap();
+    assert_eq!((first.written, first.unchanged), (3, 0));
+    let hero = dir.path().join("sprites/hero.png");
+    let manifest = dir.path().join("manifest.json");
+    let (hero_time, manifest_time) = (age(&hero), age(&manifest));
+    let second = export::render_report(&ws, &options(dir.path())).unwrap();
+    assert_eq!((second.written, second.unchanged), (0, 3));
+    assert_eq!(mtime(&hero), hero_time);
+    assert_eq!(mtime(&manifest), manifest_time);
+}
+
+#[test]
+fn only_changed_files_are_rewritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let before = worksheet(json!([sprite("hero"), sprite("coin")]), None);
+    export::render(&before, &options(dir.path())).unwrap();
+    let (hero, coin) = (
+        dir.path().join("sprites/hero.png"),
+        dir.path().join("sprites/coin.png"),
+    );
+    let (hero_time, coin_time) = (age(&hero), age(&coin));
+    // Same size, different pixels: the manifest does not change either.
+    let after = worksheet(
+        json!([sprite("hero"), { "id": "coin", "_palette": "p", "lines": ["rrr", "ggg"] }]),
+        None,
+    );
+    let report = export::render_report(&after, &options(dir.path())).unwrap();
+    assert_eq!((report.written, report.unchanged), (1, 2));
+    assert_eq!(mtime(&hero), hero_time);
+    assert_ne!(mtime(&coin), coin_time);
+}
+
+#[test]
+fn different_file_is_overwritten_in_place() {
+    let ws = worksheet(json!([sprite("hero")]), None);
+    let dir = tempfile::tempdir().unwrap();
+    let hero = dir.path().join("sprites/hero.png");
+    std::fs::create_dir_all(hero.parent().unwrap()).unwrap();
+    std::fs::write(&hero, b"not the rendered image").unwrap();
+    #[cfg(unix)]
+    let inode = {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(&hero).unwrap().ino()
+    };
+    let report = export::render_report(&ws, &options(dir.path())).unwrap();
+    assert_eq!(report.written, 2);
+    assert_eq!(&std::fs::read(&hero).unwrap()[1..4], b"PNG");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(std::fs::metadata(&hero).unwrap().ino(), inode, "same file");
+    }
+}

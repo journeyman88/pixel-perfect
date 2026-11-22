@@ -588,3 +588,31 @@ fn render_single_frames() {
         serde_json::from_str(&std::fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest["options"]["singleFrames"], true, "{manifest}");
 }
+
+#[test]
+fn render_and_watch_accept_the_same_options() {
+    let options = |command: &str| -> Vec<String> {
+        let output = cli().args([command, "--help"]).output().unwrap();
+        let help = String::from_utf8(output.stdout).unwrap();
+        let mut flags: Vec<String> = help
+            .split_whitespace()
+            .filter(|w| w.starts_with("--") && w.len() > 2)
+            .map(|w| w.trim_end_matches(',').to_owned())
+            .collect();
+        flags.sort();
+        flags.dedup();
+        flags
+    };
+    let render = options("render");
+    for flag in [
+        "--output-path",
+        "--format",
+        "--scale",
+        "--safe-build",
+        "--single-frames",
+        "--max-image-size",
+    ] {
+        assert!(render.iter().any(|f| f == flag), "render lacks {flag}");
+    }
+    assert_eq!(options("watch"), render);
+}

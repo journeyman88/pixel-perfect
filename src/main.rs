@@ -3,11 +3,16 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
-use clap::{Parser, Subcommand, ValueEnum};
-use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use notify::RecursiveMode;
+use notify_debouncer_full::{DebounceEventResult, new_debouncer};
+use pixel_perfect::export::{self, OutputFormat, RenderError, RenderOptions, RenderReport};
 use pixel_perfect::import::{self, ImportError, ImportOptions};
-use pixel_perfect::{LoadError, ResolvedWorksheet};
+use pixel_perfect::{LoadError, ResolvedWorksheet, watch};
 
 /// Renders lossless pixel art from declarative worksheets.
 #[derive(Parser)]
@@ -27,28 +32,16 @@ enum Command {
     },
     /// Render the exported resources of a worksheet to image files.
     Render {
-        /// Worksheet file (.json, .yaml, .yml, .toml).
-        worksheet: PathBuf,
-        /// Root output directory; files go to <collection>/<name>.<format>.
-        #[arg(short = 'o', long, default_value = ".")]
-        output_path: PathBuf,
-        /// Output image format.
-        #[arg(long, value_enum, default_value_t = Format::Png)]
-        format: Format,
-        /// Integer upscale factor (each pixel becomes an N x N block).
-        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=64))]
-        scale: u32,
-        /// Name files by the BLAKE2b-64 hash of their id (any id works).
-        #[arg(long)]
-        safe_build: bool,
-        /// Write animations as one still image per frame, under <collection>/<name>/.
-        #[arg(long)]
-        single_frames: bool,
-        /// Largest image the engine may build, as RGBA8 bytes: a number with an
-        /// optional KiB/MiB/GiB/TiB suffix, or "none". A guard against
-        /// mistakes, not a memory budget.
-        #[arg(long, value_name = "SIZE", default_value = "1GiB", value_parser = parse_max_image_size)]
-        max_image_size: MaxImageSize,
+        #[command(flatten)]
+        args: RenderArgs,
+    },
+    /// Render a worksheet, then render it again every time it is saved.
+    ///
+    /// Takes the same options as `render`. An invalid worksheet prints its
+    /// diagnostics and keeps the last good output; Ctrl+C stops watching.
+    Watch {
+        #[command(flatten)]
+        args: RenderArgs,
     },
     /// Add a PNG to a worksheet as a new palette and sprite, losslessly.
     ///
@@ -86,6 +79,50 @@ enum Command {
     },
 }
 
+/// The worksheet and render options, shared by `render` and `watch` so that
+/// the two commands always accept the same options.
+#[derive(Args)]
+struct RenderArgs {
+    /// Worksheet file (.json, .yaml, .yml, .toml).
+    worksheet: PathBuf,
+    /// Root output directory; files go to <collection>/<name>.<format>.
+    #[arg(short = 'o', long, default_value = ".")]
+    output_path: PathBuf,
+    /// Output image format.
+    #[arg(long, value_enum, default_value_t = Format::Png)]
+    format: Format,
+    /// Integer upscale factor (each pixel becomes an N x N block).
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=64))]
+    scale: u32,
+    /// Name files by the BLAKE2b-64 hash of their id (any id works).
+    #[arg(long)]
+    safe_build: bool,
+    /// Write animations as one still image per frame, under <collection>/<name>/.
+    #[arg(long)]
+    single_frames: bool,
+    /// Largest image the engine may build, as RGBA8 bytes: a number with an
+    /// optional KiB/MiB/GiB/TiB suffix, or "none". A guard against
+    /// mistakes, not a memory budget.
+    #[arg(long, value_name = "SIZE", default_value = "1GiB", value_parser = parse_max_image_size)]
+    max_image_size: MaxImageSize,
+}
+
+impl RenderArgs {
+    fn options(&self) -> RenderOptions {
+        RenderOptions {
+            output_path: self.output_path.clone(),
+            format: match self.format {
+                Format::Png => OutputFormat::Png,
+                Format::Webp => OutputFormat::Webp,
+            },
+            scale: self.scale,
+            safe_build: self.safe_build,
+            single_frames: self.single_frames,
+            max_image_size: self.max_image_size.0,
+        }
+    }
+}
+
 /// Parsed `--max-image-size`: `None` means no limit. A newtype, because clap
 /// would treat a bare `Option` as an optional argument.
 #[derive(Clone, Copy)]
@@ -118,28 +155,8 @@ fn main() -> ExitCode {
     };
     let code = match cli.command {
         Command::Validate { files } => validate(&files),
-        Command::Render {
-            worksheet,
-            output_path,
-            format,
-            scale,
-            safe_build,
-            single_frames,
-            max_image_size,
-        } => {
-            let options = RenderOptions {
-                output_path,
-                format: match format {
-                    Format::Png => OutputFormat::Png,
-                    Format::Webp => OutputFormat::Webp,
-                },
-                scale,
-                safe_build,
-                single_frames,
-                max_image_size: max_image_size.0,
-            };
-            render(&worksheet, &options)
-        }
+        Command::Render { args } => render(&args.worksheet, &args.options()),
+        Command::Watch { args } => watch(&args.worksheet, &args.options()),
         Command::Import {
             worksheet,
             png,
@@ -191,29 +208,190 @@ fn validate(files: &[PathBuf]) -> u8 {
         .unwrap_or(OK)
 }
 
-fn render(path: &Path, options: &RenderOptions) -> u8 {
-    let ws = match load(path) {
+/// The outcome of one render, once its messages have been printed.
+enum Rendered {
+    Done(RenderReport),
+    /// `code` is the exit code `render` would return; `problems` counts the
+    /// diagnostics printed (1 for an error that is not a diagnostic).
+    Failed {
+        code: u8,
+        problems: usize,
+    },
+}
+
+/// Loads and renders `path`, printing notices and diagnostics as `render`
+/// does. Shared by `render` and `watch`.
+fn render_once(path: &Path, options: &RenderOptions) -> Rendered {
+    let ws = match pixel_perfect::load_file(path) {
         Ok(ws) => ws,
-        Err(code) => return code,
+        Err(LoadError::Invalid { diagnostics }) => {
+            for d in &diagnostics {
+                eprintln!("{}: {d}", path.display());
+            }
+            return Rendered::Failed {
+                code: INVALID,
+                problems: diagnostics.len(),
+            };
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return Rendered::Failed {
+                code: USAGE,
+                problems: 1,
+            };
+        }
     };
-    match export::render(&ws, options) {
-        Ok((plan, _)) => {
-            for notice in &plan.notices {
+    match export::render_report(&ws, options) {
+        Ok(report) => {
+            for notice in &report.plan.notices {
                 eprintln!("{}: note: {notice}", path.display());
             }
-            OK
+            Rendered::Done(report)
         }
         Err(RenderError::Plan(diagnostics)) => {
             for d in &diagnostics {
                 eprintln!("{}: {d}", path.display());
             }
-            INVALID
+            Rendered::Failed {
+                code: INVALID,
+                problems: diagnostics.len(),
+            }
         }
         Err(e) => {
             eprintln!("{e}");
-            USAGE
+            Rendered::Failed {
+                code: USAGE,
+                problems: 1,
+            }
         }
     }
+}
+
+fn render(path: &Path, options: &RenderOptions) -> u8 {
+    match render_once(path, options) {
+        Rendered::Done(_) => OK,
+        Rendered::Failed { code, .. } => code,
+    }
+}
+
+/// How long the watcher waits for a burst of file events to settle.
+const DEBOUNCE: Duration = Duration::from_millis(150);
+
+/// The `watch` session: renders `path` and prints a summary line per render.
+struct WatchSession<'a> {
+    path: &'a Path,
+    options: &'a RenderOptions,
+    renders: usize,
+}
+
+impl watch::Session for WatchSession<'_> {
+    fn exists(&self) -> bool {
+        self.path.is_file()
+    }
+
+    fn render(&mut self) {
+        self.renders += 1;
+        let n = self.renders;
+        let start = Instant::now();
+        match render_once(self.path, self.options) {
+            Rendered::Done(report) => eprintln!(
+                "[{n}] rendered: {} written, {} unchanged, {} ms",
+                report.written,
+                report.unchanged,
+                start.elapsed().as_millis()
+            ),
+            Rendered::Failed { problems, .. } => eprintln!(
+                "[{n}] failed: {problems} {}",
+                if problems == 1 {
+                    "diagnostic"
+                } else {
+                    "diagnostics"
+                }
+            ),
+        }
+    }
+
+    fn missing(&mut self) {
+        eprintln!(
+            "{}: missing, waiting for it to come back",
+            self.path.display()
+        );
+    }
+}
+
+/// Renders `path`, then again after every change, until Ctrl+C. Returns 2 if
+/// the worksheet cannot be used or watched at start, 0 when interrupted.
+fn watch(path: &Path, options: &RenderOptions) -> u8 {
+    // A missing file or an unsupported extension ends the command at start;
+    // an invalid worksheet does not: `watch` waits for a fix.
+    if let Err(e @ (LoadError::Io { .. } | LoadError::UnsupportedExtension { .. })) =
+        pixel_perfect::load_file(path)
+    {
+        eprintln!("{e}");
+        return USAGE;
+    }
+    let Some(name) = path.file_name().map(|n| n.to_owned()) else {
+        eprintln!("{}: not a file", path.display());
+        return USAGE;
+    };
+    // Watch the directory, not the file: editors that save by renaming a
+    // temporary file over the worksheet would otherwise detach the watch.
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_owned(),
+        _ => PathBuf::from("."),
+    };
+    let (tx, rx) = mpsc::channel();
+    let events = tx.clone();
+    let debouncer = new_debouncer(DEBOUNCE, None, move |result: DebounceEventResult| {
+        match result {
+            Ok(batch) => {
+                // Reading the worksheet, as every render does, gives access
+                // events: ignoring them keeps a render from triggering the next.
+                if batch
+                    .iter()
+                    .any(|e| !e.kind.is_access() && watch::concerns(&name, &e.paths))
+                {
+                    let _ = events.send(watch::Signal::Changed);
+                }
+            }
+            Err(errors) => {
+                for e in errors {
+                    eprintln!("watch: {e}");
+                }
+            }
+        }
+    });
+    let mut debouncer = match debouncer {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("watch: cannot start the file watcher: {e}");
+            return USAGE;
+        }
+    };
+    if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
+        eprintln!("{}: cannot watch: {e}", dir.display());
+        return USAGE;
+    }
+    // First Ctrl+C: stop after the render in progress. Second: exit now.
+    let interrupted = AtomicBool::new(false);
+    if let Err(e) = ctrlc::set_handler(move || {
+        if interrupted.swap(true, Ordering::SeqCst) {
+            std::process::exit(130);
+        }
+        let _ = tx.send(watch::Signal::Stop);
+    }) {
+        eprintln!("watch: cannot handle Ctrl+C: {e}");
+        return USAGE;
+    }
+    watch::run(
+        &rx,
+        &mut WatchSession {
+            path,
+            options,
+            renders: 0,
+        },
+    );
+    OK
 }
 
 fn import(options: &ImportOptions) -> u8 {

@@ -142,7 +142,9 @@ made on the final pixels, so the choice is always the smallest lossless one.
 Output is deterministic: the same compiled engine with the same worksheet
 and options gives byte-identical files. Nothing is written if the worksheet
 or the export request is invalid, and files from earlier renders are never
-deleted.
+deleted. A file that already has exactly the new content is not rewritten and
+keeps its modification time, so tools that reload changed files reload only
+the images that really changed.
 
 Flipbooks, timelines, and panels or scenes that play a flipbook or a timeline
 are written as **APNG** (still with the `.png` extension, at the same paths).
@@ -248,6 +250,40 @@ with `--format webp`. A layer with `visible: false` is not drawn, in static
 scenes too. Before sequences existed, `visible` on a layer passed validation
 but was ignored. A hidden animated layer does not lengthen a scene's loop.
 In a sequence it counts only if some `setVisible` can show it.
+
+### Watch
+
+```sh
+# Render, then render again every time hero.json is saved. Ctrl+C stops.
+pixel-perfect watch hero.json -o out --scale 4
+```
+
+`watch` takes the same options as `render` and writes exactly what `render`
+would. It renders once at start, then again after each save. It works both
+with editors that write the file in place and with editors that save by
+renaming a temporary file over it. After each render it prints one line to
+standard error:
+
+```text
+[1] rendered: 7 written, 0 unchanged, 35 ms
+hero.json: 4:18: invalid JSON: expected `,` or `]` at line 4 column 18
+[2] failed: 1 diagnostic
+[3] rendered: 1 written, 6 unchanged, 12 ms
+```
+
+A worksheet that does not parse or validate prints its diagnostics, as
+`render` does, and leaves the previous output untouched. `watch` keeps running
+until the error is fixed. If the file is deleted, `watch` waits for it to come
+back. Since unchanged files are not rewritten, `watch` pairs well with a game
+engine or image viewer that reloads files when they change. Together they act
+as a live preview.
+
+On file systems without change notifications, such as some network mounts,
+changes may go unnoticed.
+
+Exit codes: `0` when stopped with Ctrl+C, and `2` if the worksheet cannot be
+read or watched at start. A second Ctrl+C stops at once, without waiting for
+the render in progress.
 
 ### Import
 
