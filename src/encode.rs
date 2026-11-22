@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use foldhash::fast::FixedState;
+use rayon::prelude::*;
 
 use crate::delta::{self, Rect};
 use crate::model::Rgba;
@@ -18,6 +19,14 @@ use crate::raster::{Image, TRANSPARENT};
 /// keeps every run identical.
 type ColorMap<V> = HashMap<Rgba, V, FixedState>;
 type ColorSet = HashSet<Rgba, FixedState>;
+
+/// How many frames are prepared in parallel before being consumed in order:
+/// one per worker thread. Working in batches keeps the extra memory to a few
+/// frames, instead of every frame of an animation at once; larger batches
+/// were measured to add memory without saving time.
+pub(crate) fn parallel_batch() -> usize {
+    rayon::current_num_threads().max(1)
+}
 
 /// Most colors an indexed PNG can hold.
 pub const MAX_PALETTE: usize = 256;
@@ -269,42 +278,79 @@ pub fn apng(frames: &[ApngFrame]) -> Vec<u8> {
     let mut writer = encoder
         .write_header()
         .expect("writing to a Vec cannot fail");
-    for (i, frame) in frames.iter().enumerate() {
+    for frame in frames {
         assert_eq!(
             (frame.image.width(), frame.image.height()),
             (width, height),
             "every frame has the canvas size"
         );
+    }
+    // Each frame's part (its changed area, chosen by trial compressions) and
+    // its pixel rows depend only on it and the previous frame, so they are
+    // prepared in parallel, batch by batch; the writer then takes them in
+    // order, so the file is the same as when encoding one frame at a time.
+    let prepare = |i: usize| {
         let part = match i {
             0 => FramePart {
-                rect: Rect::full(frame.image),
-                image: frame.image.clone(),
+                rect: Rect::full(frames[0].image),
+                image: frames[0].image.clone(),
                 blend: png::BlendOp::Source,
             },
-            _ => frame_part(frames[i - 1].image, frame.image, &encoding),
+            _ => frame_part(frames[i - 1].image, frames[i].image, &encoding),
         };
-        // Position (0, 0) first, so that every size fits, then the size, then
-        // the real position.
-        writer.reset_frame_position().expect("animated writer");
-        writer
-            .set_frame_dimension(part.rect.width, part.rect.height)
-            .expect("the rectangle is inside the canvas");
-        writer
-            .set_frame_position(part.rect.x, part.rect.y)
-            .expect("the rectangle is inside the canvas");
-        writer
-            .set_frame_delay(frame.delay.0, frame.delay.1)
-            .expect("animated writer");
-        writer
-            .set_dispose_op(png::DisposeOp::None)
-            .expect("animated writer");
-        writer.set_blend_op(part.blend).expect("animated writer");
-        writer
-            .write_image_data(&data.of(&part.image))
-            .expect("image data matches the frame size");
+        let rows = data.of(&part.image);
+        (part, rows)
+    };
+    let indices: Vec<usize> = (0..frames.len()).collect();
+    let batches: Vec<&[usize]> = indices.chunks(parallel_batch()).collect();
+    let prepare_batch = |batch: &[usize]| -> Vec<(FramePart, Vec<u8>)> {
+        batch.par_iter().map(|&i| prepare(i)).collect()
+    };
+    // While the writer compresses one batch on this thread, the next batch is
+    // prepared on the others.
+    let mut ready = prepare_batch(batches[0]);
+    for (n, batch) in batches.iter().enumerate() {
+        let next = batches.get(n + 1);
+        let (_, upcoming) = rayon::join(
+            || {
+                for (&i, (part, rows)) in batch.iter().zip(std::mem::take(&mut ready)) {
+                    write_frame(&mut writer, &frames[i], &part, &rows);
+                }
+            },
+            || next.map(|b| prepare_batch(b)),
+        );
+        ready = upcoming.unwrap_or_default();
     }
     writer.finish().expect("writing to a Vec cannot fail");
     out
+}
+
+/// Writes one prepared frame: its control chunk and its pixel rows.
+fn write_frame(
+    writer: &mut png::Writer<&mut Vec<u8>>,
+    frame: &ApngFrame,
+    part: &FramePart,
+    rows: &[u8],
+) {
+    // Position (0, 0) first, so that every size fits, then the size, then
+    // the real position.
+    writer.reset_frame_position().expect("animated writer");
+    writer
+        .set_frame_dimension(part.rect.width, part.rect.height)
+        .expect("the rectangle is inside the canvas");
+    writer
+        .set_frame_position(part.rect.x, part.rect.y)
+        .expect("the rectangle is inside the canvas");
+    writer
+        .set_frame_delay(frame.delay.0, frame.delay.1)
+        .expect("animated writer");
+    writer
+        .set_dispose_op(png::DisposeOp::None)
+        .expect("animated writer");
+    writer.set_blend_op(part.blend).expect("animated writer");
+    writer
+        .write_image_data(rows)
+        .expect("image data matches the frame size");
 }
 
 /// Packs palette indices into rows of `bit_depth` bits per pixel, most

@@ -9,6 +9,9 @@
 //! `F / fps` ticks.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+use rayon::prelude::*;
 
 use crate::compose::{self, Placed, find_panel, find_scene, is_animated_panel};
 use crate::model::{
@@ -865,23 +868,43 @@ impl<'a> Animation<'a> {
         merge: impl Fn(D, D) -> Option<D>,
     ) -> Vec<(Image, D)>
     where
-        D: Copy + Default + PartialEq,
+        D: Copy + Default + PartialEq + Send + Sync,
     {
-        let mut cache = Cache::default();
+        let segments: Vec<(u64, D)> = ticks
+            .iter()
+            .copied()
+            .zip(durations)
+            .filter(|&(_, duration)| duration != D::default())
+            .collect();
         let mut frames: Vec<(Image, D)> = Vec::new();
-        for (&tick, duration) in ticks.iter().zip(durations) {
-            if duration == D::default() {
-                continue;
+        // Segments are rendered in parallel, batch by batch; merging then runs
+        // in order, so the result is the same as rendering one segment at a
+        // time. Each worker thread keeps one cache for the whole animation, so
+        // static content is computed once per thread, not once per segment
+        // (a cache per rayon job made rendering many times slower). A thread
+        // only ever locks its own cache, so the locks are never contended.
+        let caches: Vec<Mutex<Cache>> = (0..rayon::current_num_threads().max(1))
+            .map(|_| Mutex::new(Cache::default()))
+            .collect();
+        for batch in segments.chunks(crate::encode::parallel_batch()) {
+            let images: Vec<Image> = batch
+                .par_iter()
+                .map(|&(tick, _)| {
+                    let thread = rayon::current_thread_index().unwrap_or(0) % caches.len();
+                    let mut cache = caches[thread].lock().expect("cache lock");
+                    self.kind.render(self.ws, self.clock, tick, &mut cache)
+                })
+                .collect();
+            for (image, &(_, duration)) in images.into_iter().zip(batch) {
+                if let Some(last) = frames.last_mut()
+                    && last.0 == image
+                    && let Some(sum) = merge(last.1, duration)
+                {
+                    last.1 = sum;
+                    continue;
+                }
+                frames.push((image, duration));
             }
-            let image = self.kind.render(self.ws, self.clock, tick, &mut cache);
-            if let Some(last) = frames.last_mut()
-                && last.0 == image
-                && let Some(sum) = merge(last.1, duration)
-            {
-                last.1 = sum;
-                continue;
-            }
-            frames.push((image, duration));
         }
         frames
     }
