@@ -616,3 +616,69 @@ fn render_and_watch_accept_the_same_options() {
     }
     assert_eq!(options("watch"), render);
 }
+
+/// Every file under `dir` with its bytes, by relative path.
+fn tree_bytes(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![dir.to_owned()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let relative = path
+                    .strip_prefix(dir)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                out.insert(relative, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn output_does_not_depend_on_the_thread_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = common::fixture("valid/animation.json");
+    for format in ["png", "webp"] {
+        for extra in [&[][..], &["--single-frames"][..]] {
+            let outputs: Vec<_> = ["1", "4"]
+                .iter()
+                .map(|threads| {
+                    let out = dir
+                        .path()
+                        .join(format!("{format}-{}-{threads}", extra.len()));
+                    cli()
+                        .arg("render")
+                        .arg(&sheet)
+                        .arg("-o")
+                        .arg(&out)
+                        .args(["--format", format, "--threads", threads])
+                        .args(extra)
+                        .assert()
+                        .code(0);
+                    tree_bytes(&out)
+                })
+                .collect();
+            assert!(
+                outputs[0].len() > 1,
+                "{format} {extra:?}: something was written"
+            );
+            assert!(
+                outputs[0] == outputs[1],
+                "{format} {extra:?}: 1 and 4 threads differ"
+            );
+        }
+    }
+}
+
+#[test]
+fn zero_threads_is_a_usage_error() {
+    cli()
+        .args(["render", "hero.json", "--threads", "0"])
+        .assert()
+        .code(2);
+}

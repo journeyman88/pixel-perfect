@@ -105,6 +105,11 @@ struct RenderArgs {
     /// mistakes, not a memory budget.
     #[arg(long, value_name = "SIZE", default_value = "1GiB", value_parser = parse_max_image_size)]
     max_image_size: MaxImageSize,
+    /// Worker threads for rendering and encoding (default: the number of
+    /// physical CPU cores, or RAYON_NUM_THREADS if set). Output does not
+    /// depend on it.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..))]
+    threads: Option<u16>,
 }
 
 impl RenderArgs {
@@ -153,6 +158,14 @@ fn main() -> ExitCode {
             return ExitCode::from(if e.use_stderr() { USAGE } else { OK });
         }
     };
+    let threads = match &cli.command {
+        Command::Render { args } | Command::Watch { args } => args.threads.map(usize::from),
+        _ => None,
+    };
+    if let Err(e) = configure_threads(threads) {
+        eprintln!("cannot start the worker threads: {e}");
+        return ExitCode::from(USAGE);
+    }
     let code = match cli.command {
         Command::Validate { files } => validate(&files),
         Command::Render { args } => render(&args.worksheet, &args.options()),
@@ -185,6 +198,29 @@ fn main() -> ExitCode {
 }
 
 /// Loads a worksheet, printing its problems. Returns the exit code on failure.
+/// Worker threads to use when neither `--threads` nor `RAYON_NUM_THREADS`
+/// says: the physical CPU cores, at most the CPUs this process may use.
+/// Measured on an 8-core, 16-thread machine, using every logical thread gave
+/// the same wall time for PNG output as one thread per core, with 20-35% more
+/// CPU time and more memory: two threads sharing a core mostly compete.
+fn default_threads() -> usize {
+    let usable = std::thread::available_parallelism().map_or(1, |n| n.get());
+    num_cpus::get_physical().clamp(1, usable)
+}
+
+/// Sizes the global rayon pool: `requested` (`--threads`) first, then
+/// `RAYON_NUM_THREADS`, then [`default_threads`].
+fn configure_threads(requested: Option<usize>) -> Result<(), rayon::ThreadPoolBuildError> {
+    let from_env = std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0);
+    let threads = requested.or(from_env).unwrap_or_else(default_threads);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()
+}
+
 fn load(path: &Path) -> Result<ResolvedWorksheet, u8> {
     pixel_perfect::load_file(path).map_err(|e| match e {
         LoadError::Invalid { diagnostics } => {

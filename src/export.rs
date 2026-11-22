@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b, Digest, digest::consts::U8};
+use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::animate::{self, Animation, MAX_FRAMES};
@@ -800,7 +801,7 @@ pub fn animation_bytes(
     if format == OutputFormat::Webp {
         let frames: Vec<(Image, u128)> = animation
             .ms_frames()
-            .into_iter()
+            .into_par_iter()
             .map(|(image, ms)| (image.upscale(scale), ms))
             .collect();
         let webp_frames: Vec<WebpFrame> = frames
@@ -814,7 +815,7 @@ pub fn animation_bytes(
     }
     let frames: Vec<(Image, Vec<(u16, u16)>)> = animation
         .frames()
-        .into_iter()
+        .into_par_iter()
         .map(|(image, ticks)| {
             let delays =
                 time::delays(ticks, animation.clock).expect("the export plan checked every delay");
@@ -863,21 +864,31 @@ fn write_frames(
     // adds no colors, so the unscaled frames are enough.
     let shared = encode::choose_all(frames.iter().map(|(image, _)| image));
     let ext = options.format.extension();
-    let mut out = Vec::with_capacity(frames.len());
-    for (index, (image, ticks)) in frames.iter().enumerate() {
+    let encode = |image: &Image| {
         let image = image.upscale(options.scale);
-        let bytes = match options.format {
+        match options.format {
             OutputFormat::Png => encode::png_with(&image, shared.clone()),
             OutputFormat::Webp => webp::still(&image),
-        };
-        let path = format!("{}/{}.{ext}", output.path, frame_name(index, frames.len()));
-        counts.add(write_file(&options.output_path.join(&path), &bytes)?);
-        let (num, den) = time::reduced(*ticks, animation.clock);
-        out.push(ManifestFrame {
-            index,
-            path,
-            duration: Fraction { num, den },
-        });
+        }
+    };
+    let mut out = Vec::with_capacity(frames.len());
+    // Frames are encoded in parallel, batch by batch, and written in order.
+    let indexed: Vec<(usize, &(Image, u64))> = frames.iter().enumerate().collect();
+    for batch in indexed.chunks(encode::parallel_batch()) {
+        let encoded: Vec<Vec<u8>> = batch
+            .par_iter()
+            .map(|(_, (image, _))| encode(image))
+            .collect();
+        for (&(index, (_, ticks)), bytes) in batch.iter().zip(encoded) {
+            let path = format!("{}/{}.{ext}", output.path, frame_name(index, frames.len()));
+            counts.add(write_file(&options.output_path.join(&path), &bytes)?);
+            let (num, den) = time::reduced(*ticks, animation.clock);
+            out.push(ManifestFrame {
+                index,
+                path,
+                duration: Fraction { num, den },
+            });
+        }
     }
     Ok(out)
 }

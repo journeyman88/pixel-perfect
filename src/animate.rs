@@ -8,11 +8,15 @@
 //! [`Animation::clock`]); a component with `fps` advances one frame-unit every
 //! `F / fps` ticks.
 
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use rayon::prelude::*;
 
 use crate::compose::{self, Placed, find_panel, find_scene, is_animated_panel};
 use crate::model::{
-    Action, ElementSource, Flipbook, Layer, Panel, Scene, Sequence, Timeline, Transform, Transition,
+    Action, Element, ElementSource, Flipbook, Layer, Panel, Scene, Sequence, Timeline, Transform,
+    Transition,
 };
 use crate::raster::{self, Image};
 use crate::render;
@@ -573,55 +577,200 @@ impl<'a> Kind<'a> {
     }
 }
 
-/// Caches of images that do not change over time.
-#[derive(Default)]
-struct Cache {
-    sprites: HashMap<String, Image>,
-    frames: HashMap<(String, usize), Image>,
-    panels: HashMap<String, Image>,
+/// Images of an animation that do not change over time: its sprites, the
+/// frames of its flipbooks on their canvas and its static panels.
+///
+/// Built once per animation by [`Prepared::new`], then shared by every
+/// rendering thread as `&Prepared`: the compiler forbids changing it through
+/// a shared reference, so threads read it without any lock. Lookups that miss
+/// compute the image on the spot without storing it, so a gap in
+/// [`Kind::needs`] costs time, never correctness; debug builds (and so the
+/// tests) flag it.
+struct Prepared<'a> {
+    sprites: HashMap<&'a str, Image>,
+    frames: HashMap<(&'a str, usize), Image>,
+    panels: HashMap<&'a str, Image>,
 }
 
-impl Cache {
-    fn sprite(&mut self, ws: &ResolvedWorksheet, id: &str) -> &Image {
-        self.sprites
-            .entry(id.to_owned())
-            .or_insert_with(|| render::sprite(ws, id))
+/// What an animation draws that does not change over time, gathered by
+/// [`Kind::needs`] before rendering.
+#[derive(Default)]
+struct Needs<'a> {
+    sprites: BTreeSet<&'a str>,
+    flipbooks: BTreeMap<&'a str, &'a Flipbook>,
+    panels: BTreeSet<&'a str>,
+}
+
+impl<'a> Needs<'a> {
+    fn flipbook(&mut self, fb: &'a Flipbook) {
+        for frame in &fb.frames {
+            self.sprites.insert(&frame.sprite);
+        }
+        self.flipbooks.insert(&fb.id, fb);
+    }
+
+    fn element(&mut self, ws: &'a ResolvedWorksheet, element: &'a Element) {
+        match element.source() {
+            ElementSource::Sprite(s) => {
+                self.sprites.insert(s);
+            }
+            ElementSource::Flipbook(f) => self.flipbook(find_flipbook(ws, f)),
+        }
+    }
+}
+
+/// Frame `index` of `fb` on the flipbook canvas, from the sprite it shows.
+fn flipbook_frame_image(sprite: &Image, fb: &Flipbook, index: usize) -> Image {
+    let frame = &fb.frames[index];
+    let image = raster::apply_all(sprite, &frame.transforms);
+    compose::flatten(
+        fb.width,
+        fb.height,
+        &[Placed {
+            image: &image,
+            coordinates: frame.coordinates,
+            z_index: 0,
+        }],
+    )
+}
+
+impl<'a> Prepared<'a> {
+    /// Computes, in parallel, every static image `kind` draws.
+    fn new(ws: &'a ResolvedWorksheet, kind: Kind<'a>) -> Self {
+        let mut needs = Needs::default();
+        kind.needs(ws, &mut needs);
+        let sprites: HashMap<&'a str, Image> = needs
+            .sprites
+            .par_iter()
+            .map(|&id| (id, render::sprite(ws, id)))
+            .collect();
+        let frame_keys: Vec<(&'a Flipbook, usize)> = needs
+            .flipbooks
+            .values()
+            .flat_map(|&fb| (0..fb.frames.len()).map(move |i| (fb, i)))
+            .collect();
+        let frames = frame_keys
+            .par_iter()
+            .map(|&(fb, i)| {
+                let sprite = &sprites[fb.frames[i].sprite.as_str()];
+                ((fb.id.as_str(), i), flipbook_frame_image(sprite, fb, i))
+            })
+            .collect();
+        let panels = needs
+            .panels
+            .par_iter()
+            .map(|&id| (id, compose::panel(ws, id)))
+            .collect();
+        Prepared {
+            sprites,
+            frames,
+            panels,
+        }
+    }
+
+    // Lookups lend the prepared image instead of copying it, so drawing reads
+    // it in place. Only a missing entry gives an owned, freshly computed one.
+
+    fn sprite(&self, ws: &ResolvedWorksheet, id: &str) -> Cow<'_, Image> {
+        match self.sprites.get(id) {
+            Some(image) => Cow::Borrowed(image),
+            None => {
+                debug_assert!(false, "sprite {id:?} was not prepared");
+                Cow::Owned(render::sprite(ws, id))
+            }
+        }
     }
 
     /// Frame `index` of `fb` on the flipbook canvas.
-    fn frame(&mut self, ws: &ResolvedWorksheet, fb: &Flipbook, index: usize) -> Image {
-        let key = (fb.id.clone(), index);
-        if let Some(image) = self.frames.get(&key) {
-            return image.clone();
+    fn frame(&self, ws: &ResolvedWorksheet, fb: &'a Flipbook, index: usize) -> Cow<'_, Image> {
+        match self.frames.get(&(fb.id.as_str(), index)) {
+            Some(image) => Cow::Borrowed(image),
+            None => {
+                debug_assert!(false, "frame {index} of {:?} was not prepared", fb.id);
+                let sprite = self.sprite(ws, &fb.frames[index].sprite);
+                Cow::Owned(flipbook_frame_image(&sprite, fb, index))
+            }
         }
-        let frame = &fb.frames[index];
-        let image = raster::apply_all(self.sprite(ws, &frame.sprite), &frame.transforms);
-        let canvas = compose::flatten(
-            fb.width,
-            fb.height,
-            &[Placed {
-                image: &image,
-                coordinates: frame.coordinates,
-                z_index: 0,
-            }],
-        );
-        self.frames.insert(key, canvas.clone());
-        canvas
     }
 
-    fn static_panel(&mut self, ws: &ResolvedWorksheet, id: &str) -> Image {
-        self.panels
-            .entry(id.to_owned())
-            .or_insert_with(|| compose::panel(ws, id))
-            .clone()
+    fn static_panel(&self, ws: &ResolvedWorksheet, id: &str) -> Cow<'_, Image> {
+        match self.panels.get(id) {
+            Some(image) => Cow::Borrowed(image),
+            None => {
+                debug_assert!(false, "panel {id:?} was not prepared");
+                Cow::Owned(compose::panel(ws, id))
+            }
+        }
     }
 }
 
-/// One element ready to be transformed and placed.
-struct Drawn {
-    image: Image,
+impl<'a> Kind<'a> {
+    /// Gathers the static images drawn by this animation: exactly what
+    /// [`Kind::render`] can look up, following the same visibility rules.
+    fn needs(self, ws: &'a ResolvedWorksheet, out: &mut Needs<'a>) {
+        match self {
+            Kind::Flipbook(fb) => out.flipbook(fb),
+            Kind::Panel(panel) => {
+                for element in panel.elements.iter().filter(|e| e.visible) {
+                    out.element(ws, element);
+                }
+            }
+            // A timeline can show any element at some point.
+            Kind::Timeline(_, panel) => {
+                for element in &panel.elements {
+                    out.element(ws, element);
+                }
+            }
+            Kind::Scene(scene) => {
+                let layers = scene.layers.iter().zip(layer_kinds(ws, scene));
+                for (layer, kind) in layers.filter(|(layer, _)| layer.visible) {
+                    Kind::layer_needs(ws, layer, kind, out);
+                }
+            }
+            Kind::Sequence(sequence, scene) => {
+                let layers = scene
+                    .layers
+                    .iter()
+                    .zip(sequence_layer_kinds(ws, sequence, scene));
+                for (layer, kind) in layers.filter(|(layer, _)| drawable(sequence, layer)) {
+                    Kind::layer_needs(ws, layer, kind, out);
+                }
+            }
+        }
+    }
+
+    fn layer_needs(
+        ws: &'a ResolvedWorksheet,
+        layer: &'a Layer,
+        kind: Option<Kind<'a>>,
+        out: &mut Needs<'a>,
+    ) {
+        match (kind, &layer.panel) {
+            (Some(kind), _) => kind.needs(ws, out),
+            (None, Some(p)) => {
+                out.panels.insert(p);
+            }
+            (None, None) => {}
+        }
+    }
+}
+
+/// One element ready to be placed: lent by [`Prepared`] when it is a static
+/// image drawn as is, owned when it was transformed or composed.
+struct Drawn<'p> {
+    image: Cow<'p, Image>,
     coordinates: [i64; 2],
     z_index: i64,
+}
+
+/// `source` with `transforms` applied; lent through unchanged when there are
+/// none, the common case.
+fn transformed<'p>(source: Cow<'p, Image>, transforms: &[Transform]) -> Cow<'p, Image> {
+    if transforms.is_empty() {
+        source
+    } else {
+        Cow::Owned(raster::apply_all(&source, transforms))
+    }
 }
 
 fn flatten_drawn(width: u32, height: u32, drawn: &[Drawn]) -> Image {
@@ -637,8 +786,15 @@ fn flatten_drawn(width: u32, height: u32, drawn: &[Drawn]) -> Image {
 }
 
 impl<'a> Kind<'a> {
-    /// The image at `tick` of the resource clock.
-    fn render(self, ws: &'a ResolvedWorksheet, clock: u64, tick: u64, cache: &mut Cache) -> Image {
+    /// The image at `tick` of the resource clock. A flipbook lends its
+    /// prepared frame; compositions are drawn on a new canvas.
+    fn render<'p>(
+        self,
+        ws: &'a ResolvedWorksheet,
+        clock: u64,
+        tick: u64,
+        cache: &'p Prepared<'a>,
+    ) -> Cow<'p, Image> {
         match self {
             Kind::Flipbook(fb) => {
                 let unit = tick / (clock / u64::from(fb.fps));
@@ -648,7 +804,7 @@ impl<'a> Kind<'a> {
                 let mut drawn = Vec::new();
                 for element in panel.elements.iter().filter(|e| e.visible) {
                     let source = match element.source() {
-                        ElementSource::Sprite(s) => cache.sprite(ws, s).clone(),
+                        ElementSource::Sprite(s) => cache.sprite(ws, s),
                         ElementSource::Flipbook(f) => {
                             let fb = find_flipbook(ws, f);
                             let unit = tick / (clock / u64::from(fb.fps));
@@ -656,12 +812,12 @@ impl<'a> Kind<'a> {
                         }
                     };
                     drawn.push(Drawn {
-                        image: raster::apply_all(&source, &element.transforms),
+                        image: transformed(source, &element.transforms),
                         coordinates: element.coordinates,
                         z_index: element.z_index,
                     });
                 }
-                flatten_drawn(panel.width, panel.height, &drawn)
+                Cow::Owned(flatten_drawn(panel.width, panel.height, &drawn))
             }
             Kind::Timeline(timeline, panel) => {
                 let u = clock / u64::from(timeline.fps);
@@ -673,7 +829,7 @@ impl<'a> Kind<'a> {
                         continue;
                     }
                     let source = match element.source() {
-                        ElementSource::Sprite(s) => cache.sprite(ws, s).clone(),
+                        ElementSource::Sprite(s) => cache.sprite(ws, s),
                         ElementSource::Flipbook(f) => {
                             let fb = find_flipbook(ws, f);
                             let v = clock / u64::from(fb.fps);
@@ -685,12 +841,12 @@ impl<'a> Kind<'a> {
                         }
                     };
                     drawn.push(Drawn {
-                        image: raster::apply_all(&source, &state.transforms),
+                        image: transformed(source, &state.transforms),
                         coordinates: state.coordinates,
                         z_index: state.z_index,
                     });
                 }
-                flatten_drawn(panel.width, panel.height, &drawn)
+                Cow::Owned(flatten_drawn(panel.width, panel.height, &drawn))
             }
             Kind::Scene(scene) => {
                 let kinds = layer_kinds(ws, scene);
@@ -709,7 +865,7 @@ impl<'a> Kind<'a> {
                         z_index: layer.z_index,
                     })
                     .collect();
-                flatten_drawn(scene.width, scene.height, &drawn)
+                Cow::Owned(flatten_drawn(scene.width, scene.height, &drawn))
             }
             Kind::Sequence(sequence, scene) => {
                 let u = clock / u64::from(sequence.fps);
@@ -734,7 +890,7 @@ impl<'a> Kind<'a> {
                         z_index: state.z_index,
                     });
                 }
-                flatten_drawn(scene.width, scene.height, &drawn)
+                Cow::Owned(flatten_drawn(scene.width, scene.height, &drawn))
             }
         }
     }
@@ -800,7 +956,13 @@ impl<'a> Animation<'a> {
     /// The image at `tick` of the loop, before `--scale`.
     pub fn render_at(&self, tick: u64) -> Image {
         self.kind
-            .render(self.ws, self.clock, tick, &mut Cache::default())
+            .render(
+                self.ws,
+                self.clock,
+                tick,
+                &Prepared::new(self.ws, self.kind),
+            )
+            .into_owned()
     }
 
     /// The frames of one loop with their durations in ticks, merging
@@ -865,23 +1027,41 @@ impl<'a> Animation<'a> {
         merge: impl Fn(D, D) -> Option<D>,
     ) -> Vec<(Image, D)>
     where
-        D: Copy + Default + PartialEq,
+        D: Copy + Default + PartialEq + Send + Sync,
     {
-        let mut cache = Cache::default();
+        let segments: Vec<(u64, D)> = ticks
+            .iter()
+            .copied()
+            .zip(durations)
+            .filter(|&(_, duration)| duration != D::default())
+            .collect();
         let mut frames: Vec<(Image, D)> = Vec::new();
-        for (&tick, duration) in ticks.iter().zip(durations) {
-            if duration == D::default() {
-                continue;
+        // Static images are computed once, then shared read-only by every
+        // thread. Segments are rendered in parallel, batch by batch; merging
+        // then runs in order, so the result is the same as rendering one
+        // segment at a time.
+        let prepared = Prepared::new(self.ws, self.kind);
+        for batch in segments.chunks(crate::encode::parallel_batch()) {
+            let images: Vec<Image> = batch
+                .par_iter()
+                .map(|&(tick, _)| {
+                    // Owned, since the frames outlive `prepared`: a copy only
+                    // for a flipbook, whose frame is lent by the cache.
+                    self.kind
+                        .render(self.ws, self.clock, tick, &prepared)
+                        .into_owned()
+                })
+                .collect();
+            for (image, &(_, duration)) in images.into_iter().zip(batch) {
+                if let Some(last) = frames.last_mut()
+                    && last.0 == image
+                    && let Some(sum) = merge(last.1, duration)
+                {
+                    last.1 = sum;
+                    continue;
+                }
+                frames.push((image, duration));
             }
-            let image = self.kind.render(self.ws, self.clock, tick, &mut cache);
-            if let Some(last) = frames.last_mut()
-                && last.0 == image
-                && let Some(sum) = merge(last.1, duration)
-            {
-                last.1 = sum;
-                continue;
-            }
-            frames.push((image, duration));
         }
         frames
     }

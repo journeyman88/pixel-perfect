@@ -8,6 +8,7 @@
 //! written here, so the file layout does not depend on the crate.
 
 use image_webp::{ColorType, EncoderParams, WebPEncoder};
+use rayon::prelude::*;
 
 use crate::delta::{self, Rect};
 use crate::raster::Image;
@@ -151,7 +152,7 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
         .expect("an animation has at least one frame")
         .image;
     let (width, height) = (first.width(), first.height());
-    let alpha = frames.iter().any(|f| has_alpha(f.image));
+    let alpha = frames.par_iter().any(|f| has_alpha(f.image));
 
     let mut body = Vec::new();
     let mut vp8x = vec![ANIMATION_FLAG | if alpha { ALPHA_FLAG } else { 0 }, 0, 0, 0];
@@ -161,8 +162,6 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
     // Background color (B, G, R, A) and loop count 0 (forever).
     chunk(&mut body, b"ANIM", &[0, 0, 0, 0, 0, 0]);
 
-    let mut count = 0;
-    let mut previous: Option<&Image> = None;
     for frame in frames {
         assert_eq!(
             (frame.image.width(), frame.image.height()),
@@ -173,15 +172,29 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
             frame.duration_ms > 0,
             "zero-length frames are dropped earlier"
         );
-        // The first part shows the new frame; the parts of a split duration
-        // after it change nothing.
-        let first_rect = match previous {
-            None => Rect::full(frame.image),
-            Some(prev) => {
-                delta::align_even(delta::changed_rect(prev, frame.image).unwrap_or(Rect::UNCHANGED))
-            }
-        };
-        let first = vp8l(&delta::crop(frame.image, first_rect), alpha);
+    }
+    // The first part of each frame shows the new frame: its changed area,
+    // encoded as VP8L. It depends only on the frame and the previous one, so
+    // every frame is encoded in parallel; the container is then assembled in
+    // order, so the file is the same as when encoding one frame at a time.
+    // The bitstreams are compressed, so keeping them all costs little memory.
+    let firsts: Vec<(Rect, Vec<u8>)> = (0..frames.len())
+        .into_par_iter()
+        .map(|i| {
+            let image = frames[i].image;
+            let rect = match i {
+                0 => Rect::full(image),
+                _ => delta::align_even(
+                    delta::changed_rect(frames[i - 1].image, image).unwrap_or(Rect::UNCHANGED),
+                ),
+            };
+            (rect, vp8l(&delta::crop(image, rect), alpha))
+        })
+        .collect();
+
+    let mut count = 0;
+    for (frame, (first_rect, first)) in frames.iter().zip(firsts) {
+        // The parts of a split duration after the first change nothing.
         let mut repeat: Option<Vec<u8>> = None;
         for (part, duration) in split_duration(frame.duration_ms).enumerate() {
             let (rect, bitstream) = if part == 0 {
@@ -206,7 +219,6 @@ pub fn animated(frames: &[WebpFrame]) -> Result<(Vec<u8>, usize), WebpError> {
             chunk(&mut body, b"ANMF", &payload);
             count += 1;
         }
-        previous = Some(frame.image);
     }
     Ok((riff(body)?, count))
 }
