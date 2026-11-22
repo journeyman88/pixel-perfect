@@ -49,7 +49,14 @@ pub fn choose(image: &Image) -> Encoding {
 pub fn choose_all<'a>(images: impl IntoIterator<Item = &'a Image>) -> Encoding {
     let mut seen = ColorSet::default();
     let (mut translucent, mut opaque) = (Vec::new(), Vec::new());
+    // Pixel art is made of runs of one color: a pixel equal to the previous
+    // one is already in `seen`, so most pixels skip the hash lookup.
+    let mut last = None;
     for &p in images.into_iter().flat_map(|image| image.pixels()) {
+        if last == Some(p) {
+            continue;
+        }
+        last = Some(p);
         if !seen.insert(p) {
             continue;
         }
@@ -306,11 +313,22 @@ fn pack_indices(image: &Image, index: &ColorMap<u8>, bit_depth: u8) -> Vec<u8> {
     let per_byte = 8 / bit_depth as usize;
     let row_bytes = (image.width() as usize).div_ceil(per_byte);
     let mut data = vec![0u8; row_bytes * image.height() as usize];
+    // The index of the previous pixel's color: runs of one color, the common
+    // case in pixel art, need a single lookup.
+    let mut last: Option<(Rgba, u8)> = None;
     for (row, pixels) in image.pixels().chunks(image.width() as usize).enumerate() {
         let out = &mut data[row * row_bytes..(row + 1) * row_bytes];
         for (x, p) in pixels.iter().enumerate() {
+            let i = match last {
+                Some((color, i)) if color == *p => i,
+                _ => {
+                    let i = index[p];
+                    last = Some((*p, i));
+                    i
+                }
+            };
             let shift = 8 - bit_depth as usize * (x % per_byte + 1);
-            out[x / per_byte] |= index[p] << shift;
+            out[x / per_byte] |= i << shift;
         }
     }
     data
