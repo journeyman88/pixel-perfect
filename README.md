@@ -289,9 +289,10 @@ as a live preview.
 On file systems without change notifications, such as some network mounts,
 changes may go unnoticed.
 
-Exit codes: `0` when stopped with Ctrl+C, and `2` if the worksheet cannot be
-read or watched at start. A second Ctrl+C stops at once, without waiting for
-the render in progress.
+Exit codes: `0` when stopped with Ctrl+C, `130` when a second Ctrl+C stops it
+during a render, and `2` if the worksheet cannot be read or watched at start.
+After a second Ctrl+C the output can be incomplete: run `render` or `watch`
+again to the same output path.
 
 ### Import
 
